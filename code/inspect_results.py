@@ -13,7 +13,6 @@ if __name__ == '__main__':
     dir_data_lab_beh = "../data_lab_behave"
 
     df_train_rec = []  # training days
-    df_bs_rec = []  # button switch days
     df_dt_rec = []  # dual task days
     df_lab_rec = []  # lab days
 
@@ -24,94 +23,11 @@ if __name__ == '__main__':
                 f_full_path = os.path.join(dir_data_fd, fs)
                 if os.path.isfile(f_full_path):
 
-                    # 1. sub 002 has an at home day labelled day 23
-                    #    that was also the 17th at home day
-                    #    (i.e., an extra day)
-                    # 2. sub 008 did four extra days
-                    #    they didn't understand EEG days counted
-                    # 3. sub 015 missed 2 at home days, therefore,
-                    #    excluding days 22, 23, 24
-                    # 4. sub 019 did 2 extra days. Day 13 froze their
-                    #    computer during the task (84 trials completed).
-                    #    They continued with the next day instead
-                    #    of re-doing day 13. So, D13 is unusable and
-                    #    will be excluded here. Will also exclude day 18,
-                    #    because it is an extra at home day.
-                    #
                     # NOTE: Day Exclusion List
-                    if fs not in [
-                            'sub_002_day_23_data.csv',  # extra at home day
-                            'sub_008_day_18_data.csv',  # extra at home day
-                            'sub_008_day_19_data.csv',  # extra at home day
-                            'sub_008_day_20_data.csv',  # extra at home day
-                            'sub_008_day_21_data.csv',  # extra at home day
-                            'sub_008_day_22_data.csv',  # exclude DT
-                            'sub_008_day_23_data.csv',  # exclude BS
-                            'sub_008_day_24_data.csv',  # exclue BS
-                            'sub_015_day_22_data.csv',  # exclude DT
-                            'sub_015_day_23_data.csv',  # exclude BS
-                            'sub_015_day_24_data.csv',  # exclude BS
-                            'sub_019_day_13_data.csv',  # computer froze
-                            'sub_019_day_18_data.csv',  # exclude DT
-                            'sub_019_day_22_data.csv',  # exclude BS
-                            'sub_019_day_23_data.csv',  # exclude BS
-                            'sub_019_day_24_data.csv'
-                    ]:  # extra at home day
+                    if fs not in []:  
 
                         df = pd.read_csv(f_full_path)
                         df['f_name'] = fs
-
-                        # sub_003 somehow replicated day 18
-                        # fix that here
-                        if fs == 'sub_003_day_19_data.csv':
-                            df['day'] = 19
-                        elif fs == 'sub_003_day_20_data.csv':
-                            df['day'] = 20
-
-                        # NOTE: sub_006 mislabeled days 22, 23, and 24 as sub_001
-                        # manually change file name to: sub_006_day_22_data.csv,
-                        # sub_006_day_23_data.csv, sub_006_day_24_data.csv
-                        # fix that here
-                        if fs == 'sub_006_day_22_data.csv':
-                            df['subject'] = 6
-                        elif fs == 'sub_006_day_23_data.csv':
-                            df['subject'] = 6
-                        elif fs == 'sub_006_day_24_data.csv':
-                            df['subject'] = 6
-
-                        # fix sub_015 mislabeling in raw data
-                        # also fix extra 1 in day 7 (trial 60 or 61) manually
-                        if fs == 'sub_015_day_01_data.csv':
-                            df['subject'] = 15
-
-                        # sub_016 mislabeled day 22 as sub_001 and had already
-                        # changed file name to: sub_016_day_22_data.csv
-                        # changing from subject 1 to subject 16
-                        # fix that here
-                        if fs == 'sub_016_day_22_data.csv':
-                            df['subject'] = 16
-
-                        # NOTE: sub_017 day 17 mislabeled to sub_007_day_17_data.csv
-                        # manually change file name to: sub_017_day_17_data.csv
-                        # fix subject column here
-                        if fs == 'sub_017_day_17_data.csv':
-                            df['subject'] = 17
-
-                        # NOTE: sub_019
-                        # mislabeled day 1 as sub_001
-                        # no need to manually change file name
-                        # fix that here
-                        if fs == 'sub_019_day_01_data.csv':
-                            df['subject'] = 19
-
-                        # from trial 276 on day 24, 'day' changes to day 25
-                        # (until the end of the expt)
-                        # also, in this file there are 4 lines of ,,,,,,,,,,,
-                        # after the end of the experiment
-                        # manually removed those lines
-                        # fix that here
-                        if fs == 'sub_019_day_24_data.csv':
-                            df['day'] = 24
 
                         day = df['day'].unique()
 
@@ -123,27 +39,10 @@ if __name__ == '__main__':
                         if day == 22:
                             df_dt_rec.append(df)
 
-                        # button-switch days
-                        if day in [23, 24]:
-                            df_bs_rec.append(df)
-
     for fd in os.listdir(dir_data_lab_beh):
         f_df = os.path.join(dir_data_lab_beh, fd)
         if os.path.isfile(f_df) and fd != '.DS_Store':
             df = pd.read_csv(f_df)
-
-            # mislabelled sub_003_day_401_data.csv
-            # manually changed file name to: sub_003_day_403_data.csv
-            # fix here
-            if fd == 'sub_003_day_401_data.csv':
-                df['day'] = 403
-
-            # mislabelled sub_015_day_15_data.csv
-            # manually changed file name to: sub_015_day_215_data.csv
-            # fix here
-            if fd == 'sub_015_day_15_data.csv':
-                df['day'] = 215
-
             df_lab_rec.append(df)
 
     block_size = 25
@@ -169,17 +68,6 @@ if __name__ == '__main__':
                                      'day'])['trial'].transform('count')
     d_dt['session_type'] = 'Dual-Task at home'
 
-    d_bs = pd.concat(df_bs_rec, ignore_index=True)
-    d_bs.sort_values(by=['subject', 'day', 'trial'], inplace=True)
-    d_bs['acc'] = (d_bs['cat'] == d_bs['resp']).astype(int)
-    d_bs['day'] = d_bs.groupby('subject')['day'].rank(
-        method='dense').astype(int)
-    d_bs['day'] = d_bs['day'].map({1: 23, 2: 24})
-    d_bs['trial'] = d_bs.groupby(['subject']).cumcount()
-    d_bs['n_trials'] = d_bs.groupby(['subject',
-                                     'day'])['trial'].transform('count')
-    d_bs['session_type'] = 'Button-Switch at home'
-
     d_lab = pd.concat(df_lab_rec, ignore_index=True)
     d_lab['acc'] = (d_lab['cat'] == d_lab['resp']).astype(int)
     d_lab['day'] = d_lab.groupby('subject')['day'].rank(
@@ -197,17 +85,15 @@ if __name__ == '__main__':
         np.concatenate([
             d.subject.unique(),
             d_dt.subject.unique(),
-            d_bs.subject.unique(),
             d_lab.subject.unique()
         ]))
 
     subs_to_keep = np.intersect1d(all_subs, d.subject.unique())
     subs_to_keep = np.intersect1d(subs_to_keep, d_dt.subject.unique())
-    subs_to_keep = np.intersect1d(subs_to_keep, d_bs.subject.unique())
     subs_to_keep = np.intersect1d(subs_to_keep, d_lab.subject.unique())
 
     # merge all dataframes inserting np.nan into columns that don't exist in a particular dataframe
-    d_all = pd.concat([d, d_dt, d_bs, d_lab], ignore_index=True, sort=False)
+    d_all = pd.concat([d, d_dt,  d_lab], ignore_index=True, sort=False)
     d_all['day'] = d_all.groupby('subject')['day'].rank(
         method='dense').astype(int)
 
@@ -362,54 +248,3 @@ if __name__ == '__main__':
                    alternative='greater',
                    paired=True)
 
-    # NOTE: button-switch figures
-
-    # prepare a data frame comparing last day of training to button-switch days
-    d_bsf = dd_all[dd_all['day'].isin([20, 23, 24])].copy()
-
-    # change the day column to categorical for plotting with names "Last Training Day", "Button-Switch Day 1", "Button-Switch Day 2"
-    d_bsf['day'] = d_bsf['day'].map({
-        20: 'Last Training Day',
-        23: 'Button-Switch Day 1',
-        24: 'Button-Switch Day 2'
-    })
-
-    # plot point range plot comparing the last day of training to button-switch days
-    fig, ax = plt.subplots(2, 1, squeeze=False, figsize=(7, 8))
-    sns.pointplot(data=d_bsf, x='day', y='acc', errorbar=('se'), ax=ax[0, 0])
-    sns.pointplot(data=d_bsf, x='day', y='rt', errorbar=('se'), ax=ax[1, 0])
-    ax[0, 0].set_xlabel('')
-    ax[0, 0].set_ylabel('Accuracy (proportion correct)')
-    ax[1, 0].set_xlabel('')
-    ax[1, 0].set_ylabel('Reaction Time (ms)')
-    plt.tight_layout()
-    plt.savefig('../figures/button_switch_performance.png', dpi=300)
-    plt.close()
-
-    # NOTE: button-switch stats
-    res_bs1 = pg.ttest(x=d_bsf[d_bsf['day'] == 'Last Training Day']['acc'],
-                       y=d_bsf[d_bsf['day'] == 'Button-Switch Day 1']['acc'],
-                       alternative='greater',
-                       paired=True)
-
-    res_bs2 = pg.ttest(x=d_bsf[d_bsf['day'] == 'Last Training Day']['acc'],
-                       y=d_bsf[d_bsf['day'] == 'Button-Switch Day 2']['acc'],
-                       alternative='greater',
-                       paired=True)
-
-    # NOTE: Make EEG predictions figure
-    # draw 5 sets of two gaussians one centered at 500 ms and another centered at 1000 ms
-    # let the amplitude of these gaussian increase across the 5 sets, but at different rates for
-    # each centre. 
-    fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 5))
-    x = np.linspace(0, 1500, 1000)
-    for i in range(5):
-        y1 = (2*i + 1) * np.exp(-0.5 * ((x - 500) / 100)**2)
-        y2 = (i + 2) * np.exp(-0.5 * ((x - 1000) / 100)**2)
-        ax[0, 0].plot(x, y1 + y2, label=f'Set {i+1}')
-    ax[0, 0].set_xlabel('Time within trial (ms)', fontsize=16)
-    ax[0, 0].set_ylabel('Functional Connectivity (a.u.)', fontsize=16)
-    ax[0, 0].legend().remove()
-    ax[0, 0].legend([f'Day {i+1}' for i in range(5)], title='')
-    plt.savefig('../figures/eeg_predictions.png', dpi=300)
-    plt.close()
