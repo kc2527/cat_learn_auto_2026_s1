@@ -62,6 +62,28 @@ TRIG = {
 }
 
 
+def normalize_category_label(value):
+    """Normalize category codes to the task labels used by response keys."""
+    if isinstance(value, str):
+        v = value.strip().upper()
+        if v in ("A", "1"):
+            return "A"
+        if v in ("B", "2"):
+            return "B"
+
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        v = None
+
+    if v == 1:
+        return "A"
+    if v == 2:
+        return "B"
+
+    raise ValueError(f"Unexpected category label: {value!r}")
+
+
 class EEGPort:
 
     def __init__(self,
@@ -129,8 +151,8 @@ class EEGPort:
 if __name__ == "__main__":
 
     # --------------------------- Experiment parameters ---------------------------
-    n_train = 550
-    n_test = 100
+    n_train = 10
+    n_test = 10
     n_total = n_train + n_test
 
     # --------------------------- Subject handling --------------------------------
@@ -496,7 +518,8 @@ if __name__ == "__main__":
                     sf_cycles_per_cm = ds['xt'].iloc[trial]
                     sf_cycles_per_pix = sf_cycles_per_cm / px_per_cm
                     ori_deg = ds['yt'].iloc[trial] * 180.0 / np.pi
-                    cat = ds['cat'].iloc[trial]
+                    cat_raw = ds['cat'].iloc[trial]
+                    cat = normalize_category_label(cat_raw)
                     phase = ds['phase'].iloc[trial]
                     trig_stim = np.nan
                     trig_resp = np.nan
