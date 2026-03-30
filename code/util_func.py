@@ -144,60 +144,110 @@ def grating_to_surface(grating_patch):
     return surface
 
 
-def plot_stim_space_examples(ds=None):
-
-    import pygame
+def plot_stim_space_examples(ds=None, win=None):
+    from psychopy import visual, event, core  # type: ignore
 
     if ds is None:
         ds, _, _ = make_stim_cats(n_stimuli_per_category=200)
 
-    screen_width, screen_height = 800, 600
-    center_x = screen_width // 2
-    center_y = screen_height // 2
-
-    pygame.init()
-    screen = pygame.display.set_mode((screen_width, screen_height))
-    pygame.display.set_caption('Simple Category Learning')
-
-    screen.fill((126, 126, 126))
+    owns_window = win is None
+    if owns_window:
+        win = visual.Window(size=(1400, 900),
+                            fullscr=False,
+                            units='pix',
+                            color=(0.494, 0.494, 0.494),
+                            colorSpace='rgb',
+                            useRetina=False,
+                            waitBlanking=True)
 
     pixels_per_inch = 227 / 2
     px_per_cm = pixels_per_inch / 2.54
     size_cm = 3
     size_px = int(size_cm * px_per_cm)
 
-    # grating size
-    size_cm = 3
-    size_px = int(size_cm * px_per_cm)
+    # Show representative real stimuli from each category in their abstract sf/orientation space.
+    exemplars = []
+    for cat in ["A", "B"]:
+        dd = ds[ds["cat"] == cat].copy().sort_values(["xt", "yt"]).reset_index(drop=True)
+        if dd.empty:
+            continue
+        idx = np.linspace(0, len(dd) - 1, 3).round().astype(int)
+        exemplars.extend(dd.iloc[idx].to_dict("records"))
 
-    # range of spatial frequency
-    freqs = [ds['xt'].min(), ds['xt'].mean(), ds['xt'].max()]
-    freqs = [x * px_per_cm**-1 for x in freqs]
+    xt_min, xt_max = ds["xt"].min(), ds["xt"].max()
+    yt_min, yt_max = ds["yt"].min(), ds["yt"].max()
 
-    # range of orientation
-    thetas = [ds['yt'].min(), ds['yt'].mean(), ds['yt'].max()]
+    def map_range(val, lo, hi, out_lo, out_hi):
+        if np.isclose(hi, lo):
+            return (out_lo + out_hi) / 2
+        return out_lo + ((val - lo) / (hi - lo)) * (out_hi - out_lo)
 
-    # Generate and blit grating patches
-    for i, freq in enumerate(freqs):
-        for j, theta in enumerate(thetas):
-            grating_patch = create_grating_patch(size_px, freq, theta)
-            grating_surface = grating_to_surface(grating_patch)
-            x = i * (screen_width / 3) + (screen_width / 6) - (size_px / 2)
-            y = j * (screen_height / 3) + (screen_height / 6) - (size_px / 2)
-            screen.blit(grating_surface, (x, y))
+    old_color = win.color
+    win.color = (0.494, 0.494, 0.494)
 
-    pygame.display.flip()
+    header = visual.TextStim(
+        win,
+        text=("Stimulus check\n"
+              "Exemplars are placed by their stimulus-space coordinates:\n"
+              "Press SPACE to continue or ESC to quit."),
+        color='white',
+        height=28,
+        pos=(0, 360),
+        wrapWidth=1500,
+    )
 
-    # Wait until window is closed
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
-                if event.key == pygame.K_SPACE:
-                    running = False
+    event.clearEvents()
 
-    pygame.quit()
+    stim_objs = []
+    label_objs = []
+
+    for ex in exemplars:
+        pos = (
+            map_range(ex["xt"], xt_min, xt_max, -240, 240),
+            map_range(ex["yt"], yt_min, yt_max, -240, 240),
+        )
+
+        stim_objs.append(
+            visual.GratingStim(
+                win,
+                tex='sin',
+                mask='circle',
+                size=(size_px, size_px),
+                units='pix',
+                pos=pos,
+                sf=ex["xt"] * px_per_cm**-1,
+                ori=np.degrees(ex["yt"]),
+                interpolate=True,
+            ))
+        label_objs.append(
+            visual.TextStim(
+                win,
+                text=(
+                    f"Cat {ex['cat']}\n"
+                    f"x={ex['x']:.1f}, y={ex['y']:.1f}\n"
+                    f"sf={ex['xt']:.2f}, ori={np.degrees(ex['yt']):.1f}°"
+                ),
+                color='lightgreen' if ex["cat"] == "A" else 'salmon',
+                height=20,
+                pos=(pos[0], pos[1] - size_px / 2 - 55),
+            ))
+
+    while True:
+        header.draw()
+        for stim in stim_objs:
+            stim.draw()
+        for label in label_objs:
+            label.draw()
+        win.flip()
+
+        keys = event.getKeys()
+        if "escape" in keys:
+            if owns_window:
+                win.close()
+            core.quit()
+        if "space" in keys:
+            break
+
+    win.color = old_color
+    if owns_window:
+        win.close()

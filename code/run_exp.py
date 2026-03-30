@@ -132,13 +132,12 @@ if __name__ == "__main__":
     size_cm = 5
     size_px = int(size_cm * px_per_cm)
 
-    win = visual.Window(size=(1920, 1080),
+    win = visual.Window(size=(1680, 1050),
                         fullscr=True,
                         units='pix',
                         color=(0.494, 0.494, 0.494),
                         colorSpace='rgb',
-                        winType='pyglet',
-                        useRetina=True,
+                        useRetina=False,
                         waitBlanking=True)
     win.mouseVisible = False
     frame_rate = win.getActualFrameRate()
@@ -390,6 +389,9 @@ if __name__ == "__main__":
     ds_test["phase"] = "test"
 
     ds = pd.concat([ds_train, ds_test]).reset_index(drop=True)
+
+    # NOTE: Uncomment to visualise gratings in stim space
+    # plot_stim_space_examples(ds, win=win)
 
     # NOTE: Uncomment to visualize stimulus space scatter
     # import matplotlib.pyplot as plt
