@@ -1,4 +1,14 @@
-from imports import *
+import numpy as np
+import pandas as pd
+from psychopy import core, event, visual
+
+
+def transorm_stim(x, y):
+    # xt maps x from [0, 100] to [0, 5]
+    # yt maps y from [0, 100] to [0, 90]
+    xt = x * 5 / 100
+    yt = (y * 90 / 100) * np.pi / 180
+    return xt, yt
 
 
 def make_stim_cats(n_stimuli_per_category=2000):
@@ -63,10 +73,9 @@ def make_stim_cats(n_stimuli_per_category=2000):
     ds = pd.DataFrame({"x": stimuli[:, 0], "y": stimuli[:, 1], "cat": labels})
 
     # Add a transformed version of the stimuli
-    # let xt map x from [0, 100] to [0, 5]
-    # let yt map y from [0, 100] to [0, 90]
-    ds["xt"] = ds["x"] * 5 / 100
-    ds["yt"] = (ds["y"] * 90 / 100) * np.pi / 180
+    xt, yt = transorm_stim(ds["x"], ds["y"])
+    ds["xt"] = xt
+    ds["yt"] = yt
 
     # shuffle rows of ds
     ds = ds.sample(frac=1).reset_index(drop=True)
@@ -133,111 +142,57 @@ def create_grating_patch(size, freq, theta):
     return gb
 
 
-def grating_to_surface(grating_patch):
-    import pygame
+def plot_stim_space_examples(ds, win, grating, px_per_cm):
 
-    normalized_patch = (grating_patch + 1) / 2 * 255
-    uint8_patch = normalized_patch.astype(np.uint8)
-    surface = pygame.Surface((grating_patch.shape[0], grating_patch.shape[1]),
-                             pygame.SRCALPHA)
-    pygame.surfarray.blit_array(surface, np.dstack([uint8_patch] * 3))
-    return surface
+    screen_h = win.size[1]
 
+    x_span = 100
+    y_span = 100
+    inner_scale = 0.5
 
-def plot_stim_space_examples(ds, win, pixels_per_inch, px_per_cm):
-    from psychopy import visual, event, core 
+    rows = []
+    n_per_cat = 3
 
-    screen_size_pix = tuple(int(x) for x in win.size)
+    x = np.array([25, 50, 75])
+    x_A = x - 10
+    x_B = x + 10
+    y_A = x_A + 20
+    y_B = x_B - 20
 
-    size_cm = 3
-    size_px = int(round(size_cm * px_per_cm))
+    x = np.concatenate([x_A, x_B])
+    y = np.concatenate([y_A, y_B])
+    xt, yt = transorm_stim(x, y)
+    cat = np.array(["A"] * 3 + ["B"] * 3)
 
-    # Show representative real stimuli from each category in their abstract sf/orientation space.
-    exemplars = []
-    for cat in ["A", "B"]:
-        dd = ds[ds["cat"] == cat].copy().sort_values(["xt", "yt"]).reset_index(drop=True)
-        if dd.empty:
-            continue
-        idx = np.linspace(0, len(dd) - 1, 3).round().astype(int)
-        exemplars.extend(dd.iloc[idx].to_dict("records"))
-
-    xt_min, xt_max = ds["xt"].min(), ds["xt"].max()
-    yt_min, yt_max = ds["yt"].min(), ds["yt"].max()
-
-    def map_range(val, lo, hi, out_lo, out_hi):
-        if np.isclose(hi, lo):
-            return (out_lo + out_hi) / 2
-        return out_lo + ((val - lo) / (hi - lo)) * (out_hi - out_lo)
-
-    x_extent = screen_size_pix[0] * 0.14
-    y_extent = screen_size_pix[1] * 0.23
-
-    old_color = win.color
-    win.color = (0.494, 0.494, 0.494)
-
-    header = visual.TextStim(
-        win,
-        text=("Stimulus check\n"
-              "Exemplars are placed by their stimulus-space coordinates:\n"
-              "Press SPACE to continue or ESC to quit."),
-        color='white',
-        height=28,
-        pos=(0, screen_size_pix[1] * 0.34),
-        wrapWidth=screen_size_pix[0] * 0.9,
-    )
+    stim_objs = []
+    for i in range(len(x)):
+        stim = visual.GratingStim(
+            win,
+            tex=grating.tex,
+            mask=grating.mask,
+            texRes=grating.texRes,
+            interpolate=grating.interpolate,
+            size=grating.size,
+            units=grating.units,
+            sf= xt[i] / px_per_cm,
+            ori= yt[i] * 180.0 / np.pi,
+        )
+        # screen center is (0, 0)
+        x_pix = ((x[i]) / x_span - 0.5) * screen_h * inner_scale
+        y_pix = ((y[i]) / y_span - 0.5) * screen_h * inner_scale
+        stim.pos = (x_pix, y_pix)
+        stim_objs.append(stim)
 
     event.clearEvents()
 
-    stim_objs = []
-    label_objs = []
-
-    for ex in exemplars:
-        pos = (
-            map_range(ex["xt"], xt_min, xt_max, -x_extent, x_extent),
-            map_range(ex["yt"], yt_min, yt_max, -y_extent, y_extent),
-        )
-
-        stim_objs.append(
-            visual.GratingStim(
-                win,
-                tex='sin',
-                mask='circle',
-                size=(size_px, size_px),
-                units='pix',
-                pos=pos,
-                sf=ex["xt"] * px_per_cm**-1,
-                ori=np.degrees(ex["yt"]),
-                interpolate=True,
-            ))
-        label_objs.append(
-            visual.TextStim(
-                win,
-                text=(
-                    f"Cat {ex['cat']}\n"
-                    f"x={ex['x']:.1f}, y={ex['y']:.1f}\n"
-                    f"sf={ex['xt']:.2f}, ori={np.degrees(ex['yt']):.1f}°"
-                ),
-                color='lightgreen' if ex["cat"] == "A" else 'salmon',
-                height=20,
-                pos=(pos[0], pos[1] - size_px / 2 - 55),
-            ))
-
     while True:
-        header.draw()
         for stim in stim_objs:
             stim.draw()
-        for label in label_objs:
-            label.draw()
         win.flip()
 
         keys = event.getKeys()
         if "escape" in keys:
-            if owns_window:
-                win.close()
+            win.close()
             core.quit()
         if "space" in keys:
             break
-
-    win.color = old_color
-    if owns_window:
-        win.close()

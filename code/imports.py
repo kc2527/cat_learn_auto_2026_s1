@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-# import seaborn as sns
-# import pingouin as pg
+import seaborn as sns
+import pingouin as pg
 import os
 from scipy.optimize import curve_fit
 from scipy.stats import linregress
