@@ -3,7 +3,7 @@
 Run category learning experiment using PsychoPy.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import os
 import numpy as np
 import pandas as pd
