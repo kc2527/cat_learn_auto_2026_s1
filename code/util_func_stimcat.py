@@ -1,14 +1,43 @@
+import math
+import random
+from datetime import datetime
 import numpy as np
 import pandas as pd
 from psychopy import core, event, visual
 
 
+SQRT2 = math.sqrt(2.0)
+SPACE_CENTER = (50.0, 50.0)
+X_MIN = 0.0
+X_MAX = 100.0
+Y_MIN = 0.0
+Y_MAX = 100.0
+SPACE_DIAG = math.hypot(X_MAX - X_MIN, Y_MAX - Y_MIN)
+T_MAJOR = (1.0 / SQRT2, 1.0 / SQRT2)
+N_MINOR = (-1.0 / SQRT2, 1.0 / SQRT2)
+
+
+def now_iso():
+    return datetime.now().isoformat()
+
+
 def transorm_stim(x, y):
     # xt maps x from [0, 100] to [0, 5]
     # yt maps y from [0, 100] to [0, 90]
-    xt = x * 5 / 100
-    yt = (y * 90 / 100) * np.pi / 180
+    xt = np.asarray(x, dtype=float) * 5.0 / 100.0
+    yt = (np.asarray(y, dtype=float) * 90.0 / 100.0) * np.pi / 180.0
     return xt, yt
+
+
+def transform_stim(x, y):
+    return transorm_stim(x, y)
+
+
+def stim_xy_to_sf_ori_deg(x, y, px_per_cm):
+    xt, yt = transorm_stim(x, y)
+    sf = np.asarray(xt, dtype=float) / px_per_cm
+    ori_deg = np.asarray(yt, dtype=float) * 180.0 / np.pi
+    return sf, ori_deg
 
 
 def make_stim_cats(n_stimuli_per_category=2000):
@@ -106,13 +135,6 @@ def make_stim_cats(n_stimuli_per_category=2000):
     ds_180["x"] = ds_180["x"] + 50
     ds_180["y"] = ds_180["y"] + 50
 
-#    fig, ax = plt.subplots(1, 3, squeeze=False,  figsize=(12, 6))
-#    sns.scatterplot(data=ds, x="x", y="y", hue="cat", alpha=0.5, ax=ax[0, 0])
-#    sns.scatterplot(data=ds_90, x="x", y="y", hue="cat", alpha=0.5, ax=ax[0, 1])
-#    sns.scatterplot(data=ds_180, x="x", y="y", hue="cat", alpha=0.5, ax=ax[0, 2])
-#    plt.tight_layout()
-#    plt.show()
-
     return ds, ds_90, ds_180
 
 
@@ -142,30 +164,35 @@ def create_grating_patch(size, freq, theta):
     return gb
 
 
-def plot_stim_space_examples(ds, win, grating, px_per_cm):
+def _sample_preview_rows(ds, n_examples):
+    if ds.empty:
+        return ds
+    if len(ds) <= n_examples:
+        return ds.reset_index(drop=True)
+    sample_idx = np.linspace(0, len(ds) - 1, n_examples, dtype=int)
+    sample_idx = np.unique(sample_idx)
+    return ds.iloc[sample_idx].reset_index(drop=True)
+
+
+def plot_stim_space_examples(ds,
+                             win,
+                             grating,
+                             px_per_cm,
+                             x_col="x",
+                             y_col="y",
+                             n_examples=6):
+    ds_plot = ds[[x_col, y_col]].dropna().drop_duplicates().reset_index(drop=True)
+    ds_plot = ds_plot.sort_values([x_col, y_col]).reset_index(drop=True)
+    ds_plot = _sample_preview_rows(ds_plot, n_examples)
 
     screen_h = win.size[1]
-
-    x_span = 100
-    y_span = 100
+    x_span = 100.0
+    y_span = 100.0
     inner_scale = 0.5
 
-    rows = []
-    n_per_cat = 3
-
-    x = np.array([25, 50, 75])
-    x_A = x - 10
-    x_B = x + 10
-    y_A = x_A + 20
-    y_B = x_B - 20
-
-    x = np.concatenate([x_A, x_B])
-    y = np.concatenate([y_A, y_B])
-    xt, yt = transorm_stim(x, y)
-    cat = np.array(["A"] * 3 + ["B"] * 3)
-
     stim_objs = []
-    for i in range(len(x)):
+    for _, row in ds_plot.iterrows():
+        sf, ori_deg = stim_xy_to_sf_ori_deg(row[x_col], row[y_col], px_per_cm)
         stim = visual.GratingStim(
             win,
             tex=grating.tex,
@@ -174,12 +201,11 @@ def plot_stim_space_examples(ds, win, grating, px_per_cm):
             interpolate=grating.interpolate,
             size=grating.size,
             units=grating.units,
-            sf= xt[i] / px_per_cm,
-            ori= yt[i] * 180.0 / np.pi,
+            sf=float(np.asarray(sf)),
+            ori=float(np.asarray(ori_deg)),
         )
-        # screen center is (0, 0)
-        x_pix = ((x[i]) / x_span - 0.5) * screen_h * inner_scale
-        y_pix = ((y[i]) / y_span - 0.5) * screen_h * inner_scale
+        x_pix = ((row[x_col]) / x_span - 0.5) * screen_h * inner_scale
+        y_pix = ((row[y_col]) / y_span - 0.5) * screen_h * inner_scale
         stim.pos = (x_pix, y_pix)
         stim_objs.append(stim)
 
@@ -196,3 +222,320 @@ def plot_stim_space_examples(ds, win, grating, px_per_cm):
             core.quit()
         if "space" in keys:
             break
+
+
+def make_rsa_pool_grid(grid_n=7,
+                       x_min=20.0,
+                       x_max=100.0,
+                       y_min=0.0,
+                       y_max=100.0):
+    xs = np.linspace(x_min, x_max, grid_n)
+    ys = np.linspace(y_min, y_max, grid_n)
+    xx, yy = np.meshgrid(xs, ys)
+    ds = pd.DataFrame({
+        "item_id": np.arange(xx.size, dtype=int),
+        "x": xx.ravel(),
+        "y": yy.ravel(),
+    })
+    xt, yt = transorm_stim(ds["x"], ds["y"])
+    ds["xt"] = xt
+    ds["yt"] = yt
+    ds["ori_deg"] = ds["yt"] * 180.0 / np.pi
+    return ds
+
+
+def _assign_extra_blocks_exact(n_items, n_blocks, extras_per_item, extras_targets, rng):
+    if len(extras_targets) != n_blocks:
+        raise ValueError("extras_targets length mismatch")
+
+    for _ in range(200):
+        remaining = list(extras_targets)
+        assignment = [[] for _ in range(n_items)]
+        item_order = list(range(n_items))
+        rng.shuffle(item_order)
+        ok = True
+
+        for item in item_order:
+            chosen = []
+            for _k in range(extras_per_item):
+                candidates = [b for b in range(n_blocks) if remaining[b] > 0 and b not in chosen]
+                if not candidates:
+                    ok = False
+                    break
+                max_remaining = max(remaining[b] for b in candidates)
+                top = [b for b in candidates if remaining[b] == max_remaining]
+                block_id = rng.choice(top)
+                chosen.append(block_id)
+                remaining[block_id] -= 1
+            if not ok:
+                break
+            assignment[item] = chosen
+
+        if ok and all(v == 0 for v in remaining):
+            return assignment
+
+    raise RuntimeError("Failed to build exact RSA extras-by-block assignment.")
+
+
+def _reduce_adjacent_item_repeats(item_ids):
+    for i in range(1, len(item_ids)):
+        if item_ids[i] != item_ids[i - 1]:
+            continue
+        swap_j = None
+        for j in range(i + 1, len(item_ids)):
+            if item_ids[j] != item_ids[i - 1] and (
+                j == len(item_ids) - 1 or item_ids[j] != item_ids[j + 1]
+            ):
+                swap_j = j
+                break
+        if swap_j is None:
+            for j in range(i + 1, len(item_ids)):
+                if item_ids[j] != item_ids[i - 1]:
+                    swap_j = j
+                    break
+        if swap_j is not None:
+            item_ids[i], item_ids[swap_j] = item_ids[swap_j], item_ids[i]
+
+
+def make_rsa_schedule_table(pool,
+                            repeats_per_item=20,
+                            n_blocks=8,
+                            schedule_seed="rsa_schedule"):
+    rng = random.Random(schedule_seed)
+    pool_size = len(pool)
+    total_trials = pool_size * repeats_per_item
+
+    base_per_block = repeats_per_item // n_blocks
+    extras_per_item = repeats_per_item % n_blocks
+    total_extras = pool_size * extras_per_item
+    extras_per_block_base = total_extras // n_blocks
+    extras_per_block_rem = total_extras % n_blocks
+    extras_targets = [
+        extras_per_block_base + (1 if b < extras_per_block_rem else 0)
+        for b in range(n_blocks)
+    ]
+    rng.shuffle(extras_targets)
+
+    extras_assignment = _assign_extra_blocks_exact(
+        n_items=pool_size,
+        n_blocks=n_blocks,
+        extras_per_item=extras_per_item,
+        extras_targets=extras_targets,
+        rng=rng,
+    )
+
+    rows = []
+    for item_id in range(pool_size):
+        extra_set = set(extras_assignment[item_id])
+        for block_zero in range(n_blocks):
+            n_here = base_per_block + (1 if block_zero in extra_set else 0)
+            rows.extend([{"block_id": block_zero + 1, "item_id": item_id}] * n_here)
+
+    block_tables = []
+    for block_id in range(1, n_blocks + 1):
+        item_ids = [row["item_id"] for row in rows if row["block_id"] == block_id]
+        rng.shuffle(item_ids)
+        _reduce_adjacent_item_repeats(item_ids)
+        block_df = pd.DataFrame({
+            "block_id": block_id,
+            "block_trial": np.arange(1, len(item_ids) + 1, dtype=int),
+            "item_id": item_ids,
+        })
+        block_tables.append(block_df)
+
+    schedule = pd.concat(block_tables, ignore_index=True)
+    schedule["trial"] = np.arange(len(schedule), dtype=int)
+    schedule = schedule.merge(pool, how="left", on="item_id", validate="many_to_one")
+
+    if len(schedule) != total_trials:
+        raise ValueError(f"RSA trial count mismatch: expected {total_trials}, got {len(schedule)}")
+
+    repeats = np.bincount(schedule["item_id"].to_numpy(dtype=int), minlength=pool_size)
+    if repeats.shape[0] != pool_size or not np.all(repeats == repeats_per_item):
+        raise ValueError("RSA repeat counts are incorrect.")
+
+    return schedule.reset_index(drop=True)
+
+
+def make_cp_geometry(axis_gap=30.0, major_axis_frac=0.75, minor_axis_len=25.0):
+    major_len = max(0.05, min(0.95, major_axis_frac)) * SPACE_DIAG
+    half_major = major_len * 0.5
+    half_minor = max(1.0, min(minor_axis_len * 0.5, SPACE_DIAG * 0.45))
+    half_gap = axis_gap * 0.5
+    center_a = {
+        "x": SPACE_CENTER[0] + N_MINOR[0] * half_gap,
+        "y": SPACE_CENTER[1] + N_MINOR[1] * half_gap,
+    }
+    center_b = {
+        "x": SPACE_CENTER[0] - N_MINOR[0] * half_gap,
+        "y": SPACE_CENTER[1] - N_MINOR[1] * half_gap,
+    }
+    return {
+        "half_major": half_major,
+        "half_minor": half_minor,
+        "center_a": center_a,
+        "center_b": center_b,
+    }
+
+
+def make_cp_trial_table(practice_far_n=16,
+                        practice_moderate_n=8,
+                        main_reps_per_cell=34,
+                        near_dist=6.0,
+                        far_dist=15.0,
+                        schedule_seed="cp_schedule"):
+    rng = random.Random(schedule_seed)
+    families = ["within_A", "within_B", "between_AB"]
+    moderate_dist = 0.5 * (near_dist + far_dist)
+
+    practice_rows = []
+    for level, dist, n_trials in [
+        ("far", float(far_dist), practice_far_n),
+        ("moderate", float(moderate_dist), practice_moderate_n),
+    ]:
+        base = n_trials // len(families)
+        rem = n_trials % len(families)
+        fam_order = families[:]
+        rng.shuffle(fam_order)
+        for i, fam in enumerate(fam_order):
+            n_here = base + (1 if i < rem else 0)
+            for _ in range(n_here):
+                practice_rows.append({
+                    "phase": "practice",
+                    "family": fam,
+                    "distance_level": level,
+                    "distance": dist,
+                    "condition_id": f"practice_{fam}_{level}_{dist:.3f}",
+                    "block_id": 0,
+                })
+    rng.shuffle(practice_rows)
+
+    main_rows = []
+    for family in families:
+        for distance_level, distance in [("near", near_dist), ("far", far_dist)]:
+            for _ in range(main_reps_per_cell):
+                main_rows.append({
+                    "phase": "main",
+                    "family": family,
+                    "distance_level": distance_level,
+                    "distance": float(distance),
+                    "condition_id": f"{family}_{distance_level}_{distance:.3f}",
+                    "block_id": 1,
+                })
+    rng.shuffle(main_rows)
+
+    ds = pd.DataFrame(practice_rows + main_rows)
+    ds["trial"] = np.arange(len(ds), dtype=int)
+    return ds
+
+
+def signed_boundary_distance(x, y):
+    return (y - x) / SQRT2
+
+
+def key_to_interval(raw_key):
+    if raw_key in {"1", "num_1"}:
+        return 1
+    if raw_key in {"2", "num_2"}:
+        return 2
+    return None
+
+
+def build_cp_trial_runtime(trial_row, geometry, rng):
+    def shift_point(pt, direction, amount):
+        return {
+            "x": pt["x"] + direction[0] * amount,
+            "y": pt["y"] + direction[1] * amount,
+        }
+
+    def point_on_side(pt, category):
+        d = signed_boundary_distance(pt["x"], pt["y"])
+        return d > 0 if category == "A" else d < 0
+
+    def point_in_category_ellipse(pt, category):
+        center = geometry["center_a"] if category == "A" else geometry["center_b"]
+        rel_x = pt["x"] - center["x"]
+        rel_y = pt["y"] - center["y"]
+        major_coord = rel_x * T_MAJOR[0] + rel_y * T_MAJOR[1]
+        minor_coord = rel_x * N_MINOR[0] + rel_y * N_MINOR[1]
+        q = ((major_coord * major_coord) / (geometry["half_major"] * geometry["half_major"])
+             + (minor_coord * minor_coord) / (geometry["half_minor"] * geometry["half_minor"]))
+        return q <= 1.0 + 1e-9
+
+    def point_in_category(pt, category):
+        return (X_MIN <= pt["x"] <= X_MAX and
+                Y_MIN <= pt["y"] <= Y_MAX and
+                point_on_side(pt, category) and
+                point_in_category_ellipse(pt, category))
+
+    def sample_point_in_category(category):
+        center = geometry["center_a"] if category == "A" else geometry["center_b"]
+        for _ in range(500):
+            r = math.sqrt(rng.random())
+            theta = rng.uniform(0.0, 2.0 * math.pi)
+            major_coord = geometry["half_major"] * r * math.cos(theta)
+            minor_coord = geometry["half_minor"] * r * math.sin(theta)
+            pt = {
+                "x": center["x"] + T_MAJOR[0] * major_coord + N_MINOR[0] * minor_coord,
+                "y": center["y"] + T_MAJOR[1] * major_coord + N_MINOR[1] * minor_coord,
+            }
+            if point_in_category(pt, category):
+                return pt
+        return {"x": center["x"], "y": center["y"]}
+
+    family = trial_row["family"]
+    distance = float(trial_row["distance"])
+
+    if family in {"within_A", "within_B"}:
+        category = "A" if family == "within_A" else "B"
+        pair = None
+        for _ in range(500):
+            center = sample_point_in_category(category)
+            p1 = shift_point(center, T_MAJOR, distance * 0.5)
+            p2 = shift_point(center, T_MAJOR, -distance * 0.5)
+            if point_in_category(p1, category) and point_in_category(p2, category):
+                pair = {"ref": p1, "cmp": p2}
+                break
+        if pair is None:
+            center = sample_point_in_category(category)
+            pair = {"ref": center, "cmp": shift_point(center, T_MAJOR, 0.01)}
+    else:
+        pair = None
+        for _ in range(500):
+            t = rng.uniform(0.15, 0.85)
+            mid = {
+                "x": X_MIN + (X_MAX - X_MIN) * t,
+                "y": Y_MIN + (Y_MAX - Y_MIN) * t,
+            }
+            p_a = shift_point(mid, N_MINOR, distance * 0.5)
+            p_b = shift_point(mid, N_MINOR, -distance * 0.5)
+            if point_in_category(p_a, "A") and point_in_category(p_b, "B"):
+                pair = {"ref": p_a, "cmp": p_b}
+                break
+        if pair is None:
+            pair = {
+                "ref": shift_point({"x": SPACE_CENTER[0], "y": SPACE_CENTER[1]}, N_MINOR, 0.5),
+                "cmp": shift_point({"x": SPACE_CENTER[0], "y": SPACE_CENTER[1]}, N_MINOR, -0.5),
+            }
+
+    diff_interval = 1 if rng.random() < 0.5 else 2
+    flip_order = rng.random() < 0.5
+    same_pair = {"a": pair["ref"], "b": pair["ref"]}
+    diff_pair = {"a": pair["cmp"], "b": pair["ref"]} if flip_order else {"a": pair["ref"], "b": pair["cmp"]}
+    int1 = diff_pair if diff_interval == 1 else same_pair
+    int2 = diff_pair if diff_interval == 2 else same_pair
+
+    pair_type = "within" if family in {"within_A", "within_B"} else "across"
+
+    return {
+        "condition_id": trial_row["condition_id"],
+        "cp_family": family,
+        "cp_distance_level": trial_row["distance_level"],
+        "distance": distance,
+        "pair_type": pair_type,
+        "diff_interval": diff_interval,
+        "int1a": int1["a"],
+        "int1b": int1["b"],
+        "int2a": int2["a"],
+        "int2b": int2["b"],
+    }

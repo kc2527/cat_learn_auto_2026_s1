@@ -35,13 +35,30 @@ def resolve_session(dir_data,
                     n_total,
                     resume_window=timedelta(hours=12),
                     new_session_cooldown=timedelta(hours=8),
-                    now=None):
+                    now=None,
+                    task_tag=None):
     now = datetime.now() if now is None else now
     today = now.date()
 
-    fn_re_part = re.compile(
-        rf"^sub_{re.escape(str(subject))}_sess_(\d{{3}})_part_(\d{{3}})_date_(\d{{4}}_\d{{2}}_\d{{2}})_data\.csv$"
-    )
+    if task_tag is None:
+        fn_re_part = re.compile(
+            rf"^sub_{re.escape(str(subject))}_sess_(\d{{3}})_part_(\d{{3}})_date_(\d{{4}}_\d{{2}}_\d{{2}})_data\.csv$"
+        )
+    else:
+        fn_re_part = re.compile(
+            rf"^sub_{re.escape(str(subject))}_task_{re.escape(str(task_tag))}_sess_(\d{{3}})_part_(\d{{3}})_date_(\d{{4}}_\d{{2}}_\d{{2}})_data\.csv$"
+        )
+
+    def build_filename(session_num, part_num, date_key):
+        if task_tag is None:
+            return (
+                f"sub_{subject}_sess_{int(session_num):03d}_part_{int(part_num):03d}"
+                f"_date_{date_key}_data.csv"
+            )
+        return (
+            f"sub_{subject}_task_{task_tag}_sess_{int(session_num):03d}_part_{int(part_num):03d}"
+            f"_date_{date_key}_data.csv"
+        )
 
     session_records = {}
 
@@ -105,10 +122,7 @@ def resolve_session(dir_data,
     session_num = max((s["session_num"] for s in sessions), default=0) + 1
     part_num = 1
     today_key = now.strftime("%Y_%m_%d")
-    f_name = (
-        f"sub_{subject}_sess_{int(session_num):03d}_part_{int(part_num):03d}"
-        f"_date_{today_key}_data.csv"
-    )
+    f_name = build_filename(session_num, part_num, today_key)
     full_path = os.path.join(dir_data, f_name)
     n_done = 0
 
@@ -122,10 +136,7 @@ def resolve_session(dir_data,
         part_num = recent_incomplete["max_part"] + 1
         n_done = recent_incomplete["n_done"]
         today_key = now.strftime("%Y_%m_%d")
-        f_name = (
-            f"sub_{subject}_sess_{int(session_num):03d}_part_{int(part_num):03d}"
-            f"_date_{today_key}_data.csv"
-        )
+        f_name = build_filename(session_num, part_num, today_key)
         full_path = os.path.join(dir_data, f_name)
         remaining = n_total - n_done
         print(
@@ -161,10 +172,7 @@ def resolve_session(dir_data,
         session_num = max((s["session_num"] for s in sessions), default=0) + 1
         part_num = 1
         today_key = now.strftime("%Y_%m_%d")
-        f_name = (
-            f"sub_{subject}_sess_{int(session_num):03d}_part_{int(part_num):03d}"
-            f"_date_{today_key}_data.csv"
-        )
+        f_name = build_filename(session_num, part_num, today_key)
         full_path = os.path.join(dir_data, f_name)
         n_done = 0
 
