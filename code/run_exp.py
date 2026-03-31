@@ -196,8 +196,16 @@ if __name__ == "__main__":
     # sns.scatterplot(data=ds, x='xt', y='yt_deg', hue='cat', ax=ax[0, 2])
     # plt.show()
 
-    # NOTE: Uncomment to visualise gratings in stim space
-    plot_stim_space_examples(ds, win, grating, px_per_cm)
+    # # NOTE: Uncomment to visualise gratings in stim space
+    # x = np.array([25, 50, 75]) 
+    # x_A = x - 10
+    # x_B = x + 10
+    # y_A = x + 10
+    # y_B = x - 10
+    # x = np.concat([x_A, x_B])
+    # y = np.concat([y_A, y_B])
+    # dss = pd.DataFrame({'x':x, 'y':y})
+    # plot_stim_space_examples(dss, win, grating, px_per_cm)
 
     # ---------------------------  session handling -------------------------------
     session_info = resolve_session(

@@ -97,7 +97,14 @@ if __name__ == "__main__":
     pool = make_rsa_pool_grid(grid_n=RSA_POOL_GRID_N)
 
     # NOTE: Uncomment to visualise gratings in stim space
-    # plot_stim_space_examples(pool, win, grating, PX_PER_CM)
+    # x_min = pool["x"].min() + 5
+    # x_max = pool["x"].max() - 5
+    # y_min = pool["y"].min() + 5
+    # y_max = pool["y"].max() - 5
+    # x = np.linspace(x_min, x_max, 3)
+    # y = np.linspace(y_min, y_max, 2)
+    # dss = pd.DataFrame({'x':x.repeat(2), 'y':np.tile(y, 3)})
+    # plot_stim_space_examples(dss, win, grating, PX_PER_CM)
 
     session_info = resolve_session(
         dir_data,

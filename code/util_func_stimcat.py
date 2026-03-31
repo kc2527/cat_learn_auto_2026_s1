@@ -21,7 +21,7 @@ def now_iso():
     return datetime.now().isoformat()
 
 
-def transorm_stim(x, y):
+def transform_stim(x, y):
     # xt maps x from [0, 100] to [0, 5]
     # yt maps y from [0, 100] to [0, 90]
     xt = np.asarray(x, dtype=float) * 5.0 / 100.0
@@ -29,18 +29,15 @@ def transorm_stim(x, y):
     return xt, yt
 
 
-def transform_stim(x, y):
-    return transorm_stim(x, y)
-
-
 def stim_xy_to_sf_ori_deg(x, y, px_per_cm):
-    xt, yt = transorm_stim(x, y)
+    xt, yt = transform_stim(x, y)
     sf = np.asarray(xt, dtype=float) / px_per_cm
     ori_deg = np.asarray(yt, dtype=float) * 180.0 / np.pi
     return sf, ori_deg
 
 
-def make_stim_cats(n_stimuli_per_category=2000):
+def make_stim_cats(n_stimuli_per_category=2000, random_seed=None):
+    rng = np.random.default_rng(random_seed)
 
     # Define covariance matrix parameters
     var = 100
@@ -63,11 +60,11 @@ def make_stim_cats(n_stimuli_per_category=2000):
     def sample_within_ellipse(mean, n_samples):
 
         # Sample radius
-        r = np.sqrt(np.random.uniform(
+        r = np.sqrt(rng.uniform(
             0, 9, n_samples))  # 3 standard deviations, squared is 9
 
         # Sample angle
-        angle = np.random.uniform(0, 2 * np.pi, n_samples)
+        angle = rng.uniform(0, 2 * np.pi, n_samples)
 
         # Convert polar to Cartesian coordinates
         x = r * np.cos(angle)
@@ -102,12 +99,15 @@ def make_stim_cats(n_stimuli_per_category=2000):
     ds = pd.DataFrame({"x": stimuli[:, 0], "y": stimuli[:, 1], "cat": labels})
 
     # Add a transformed version of the stimuli
-    xt, yt = transorm_stim(ds["x"], ds["y"])
+    xt, yt = transform_stim(ds["x"], ds["y"])
     ds["xt"] = xt
     ds["yt"] = yt
 
     # shuffle rows of ds
-    ds = ds.sample(frac=1).reset_index(drop=True)
+    if random_seed is None:
+        ds = ds.sample(frac=1).reset_index(drop=True)
+    else:
+        ds = ds.sample(frac=1, random_state=int(rng.integers(0, 2**32 - 1))).reset_index(drop=True)
 
     # create 90 degree rotation stim
     ds_90 = ds.copy()
@@ -181,6 +181,7 @@ def plot_stim_space_examples(ds,
                              x_col="x",
                              y_col="y",
                              n_examples=6):
+
     ds_plot = ds[[x_col, y_col]].dropna().drop_duplicates().reset_index(drop=True)
     ds_plot = ds_plot.sort_values([x_col, y_col]).reset_index(drop=True)
     ds_plot = _sample_preview_rows(ds_plot, n_examples)
@@ -225,10 +226,10 @@ def plot_stim_space_examples(ds,
 
 
 def make_rsa_pool_grid(grid_n=7,
-                       x_min=20.0,
-                       x_max=100.0,
-                       y_min=0.0,
-                       y_max=100.0):
+                       x_min=4.0,
+                       x_max=96.0,
+                       y_min=4.0,
+                       y_max=96.0):
     xs = np.linspace(x_min, x_max, grid_n)
     ys = np.linspace(y_min, y_max, grid_n)
     xx, yy = np.meshgrid(xs, ys)
@@ -237,7 +238,7 @@ def make_rsa_pool_grid(grid_n=7,
         "x": xx.ravel(),
         "y": yy.ravel(),
     })
-    xt, yt = transorm_stim(ds["x"], ds["y"])
+    xt, yt = transform_stim(ds["x"], ds["y"])
     ds["xt"] = xt
     ds["yt"] = yt
     ds["ori_deg"] = ds["yt"] * 180.0 / np.pi
@@ -429,6 +430,56 @@ def make_cp_trial_table(practice_far_n=16,
     return ds
 
 
+def make_cp_pair_tables(n_stimuli_per_category=400, pool_seed="cp_pool"):
+    pool_seed_int = random.Random(str(pool_seed)).randrange(0, 2**32)
+    ds, _, _ = make_stim_cats(
+        n_stimuli_per_category=n_stimuli_per_category,
+        random_seed=pool_seed_int,
+    )
+    ds["stim_id"] = np.arange(len(ds), dtype=int)
+
+    def build_pair_table(ds_left, ds_right, allow_same_category):
+        xy_left = ds_left[["x", "y"]].to_numpy(dtype=float)
+        xy_right = ds_right[["x", "y"]].to_numpy(dtype=float)
+        stim_left = ds_left["stim_id"].to_numpy(dtype=int)
+        stim_right = ds_right["stim_id"].to_numpy(dtype=int)
+
+        if allow_same_category:
+            idx_left, idx_right = np.triu_indices(len(ds_left), k=1)
+            pts_left = xy_left[idx_left]
+            pts_right = xy_right[idx_right]
+            stim_id_left = stim_left[idx_left]
+            stim_id_right = stim_right[idx_right]
+        else:
+            idx_left, idx_right = np.indices((len(ds_left), len(ds_right)))
+            idx_left = idx_left.ravel()
+            idx_right = idx_right.ravel()
+            pts_left = xy_left[idx_left]
+            pts_right = xy_right[idx_right]
+            stim_id_left = stim_left[idx_left]
+            stim_id_right = stim_right[idx_right]
+
+        dist = np.linalg.norm(pts_left - pts_right, axis=1)
+        return pd.DataFrame({
+            "ref_id": stim_id_left,
+            "cmp_id": stim_id_right,
+            "ref_x": pts_left[:, 0],
+            "ref_y": pts_left[:, 1],
+            "cmp_x": pts_right[:, 0],
+            "cmp_y": pts_right[:, 1],
+            "distance": dist,
+        })
+
+    ds_a = ds.loc[ds["cat"] == "A"].reset_index(drop=True)
+    ds_b = ds.loc[ds["cat"] == "B"].reset_index(drop=True)
+
+    return {
+        "within_A": build_pair_table(ds_a, ds_a, allow_same_category=True),
+        "within_B": build_pair_table(ds_b, ds_b, allow_same_category=True),
+        "between_AB": build_pair_table(ds_a, ds_b, allow_same_category=False),
+    }
+
+
 def signed_boundary_distance(x, y):
     return (y - x) / SQRT2
 
@@ -532,6 +583,65 @@ def build_cp_trial_runtime(trial_row, geometry, rng):
         "cp_family": family,
         "cp_distance_level": trial_row["distance_level"],
         "distance": distance,
+        "pair_type": pair_type,
+        "diff_interval": diff_interval,
+        "int1a": int1["a"],
+        "int1b": int1["b"],
+        "int2a": int2["a"],
+        "int2b": int2["b"],
+    }
+
+
+def build_cp_trial_runtime_from_pairs(trial_row,
+                                      pair_tables,
+                                      rng,
+                                      fallback_n=256):
+    family = trial_row["family"]
+    pair_table = pair_tables[family]
+    distance_values = pair_table["distance"].to_numpy(dtype=float)
+    distance_level = trial_row["distance_level"]
+
+    if distance_level == "near":
+        lower_q, upper_q = 0.00, 0.20
+    elif distance_level == "moderate":
+        lower_q, upper_q = 0.40, 0.60
+    elif distance_level == "far":
+        lower_q, upper_q = 0.80, 1.00
+    else:
+        lower_q, upper_q = 0.00, 1.00
+
+    lower = float(np.quantile(distance_values, lower_q))
+    upper = float(np.quantile(distance_values, upper_q))
+    candidate_idx = np.flatnonzero((distance_values >= lower) & (distance_values <= upper))
+
+    if candidate_idx.size == 0:
+        band_center = 0.5 * (lower + upper)
+        dist_delta = np.abs(distance_values - band_center)
+        candidate_idx = np.argsort(dist_delta)[:min(fallback_n, len(pair_table))]
+
+    pair_row = pair_table.iloc[int(candidate_idx[rng.randrange(len(candidate_idx))])]
+    ref = {"x": float(pair_row["ref_x"]), "y": float(pair_row["ref_y"])}
+    cmp = {"x": float(pair_row["cmp_x"]), "y": float(pair_row["cmp_y"])}
+
+    if rng.random() < 0.5:
+        ref, cmp = cmp, ref
+
+    diff_interval = 1 if rng.random() < 0.5 else 2
+    flip_order = rng.random() < 0.5
+    same_ref = ref if rng.random() < 0.5 else cmp
+    same_pair = {"a": same_ref, "b": same_ref}
+    diff_pair = {"a": cmp, "b": ref} if flip_order else {"a": ref, "b": cmp}
+    int1 = diff_pair if diff_interval == 1 else same_pair
+    int2 = diff_pair if diff_interval == 2 else same_pair
+
+    pair_type = "within" if family in {"within_A", "within_B"} else "across"
+
+    return {
+        "condition_id": trial_row["condition_id"],
+        "cp_family": family,
+        "cp_distance_level": distance_level,
+        "distance": float(pair_row["distance"]),
+        "distance_target": float(trial_row["distance"]),
         "pair_type": pair_type,
         "diff_interval": diff_interval,
         "int1a": int1["a"],

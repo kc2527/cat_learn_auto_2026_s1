@@ -14,9 +14,9 @@ from psychopy.hardware import keyboard
 from util_func_eeg import EEGPort
 from util_func_pid import prompt_for_pid_in_set
 from util_func_session_man import resolve_session
-from util_func_stimcat import build_cp_trial_runtime
+from util_func_stimcat import build_cp_trial_runtime_from_pairs
 from util_func_stimcat import key_to_interval
-from util_func_stimcat import make_cp_geometry
+from util_func_stimcat import make_cp_pair_tables
 from util_func_stimcat import make_cp_trial_table
 from util_func_stimcat import now_iso
 from util_func_stimcat import plot_stim_space_examples
@@ -134,7 +134,7 @@ if __name__ == "__main__":
 
     seed = f"{participant}_{session_num:03d}_{MODE}"
     rng = random.Random(seed)
-    geometry = make_cp_geometry()
+    pair_tables = make_cp_pair_tables(pool_seed=f"{seed}_pool")
     trials = make_cp_trial_table(
         practice_far_n=CP_PRACTICE_FAR_N,
         practice_moderate_n=CP_PRACTICE_MODERATE_N,
@@ -147,7 +147,11 @@ if __name__ == "__main__":
     preview_rows = []
     preview_rng = random.Random(f"{seed}_preview")
     for preview_idx in np.linspace(0, len(trials) - 1, 6, dtype=int):
-        preview_runtime = build_cp_trial_runtime(trials.iloc[int(preview_idx)], geometry, preview_rng)
+        preview_runtime = build_cp_trial_runtime_from_pairs(
+            trials.iloc[int(preview_idx)],
+            pair_tables,
+            preview_rng,
+        )
         for stim_name in ["int1a", "int1b", "int2a", "int2b"]:
             preview_rows.append({
                 "x": preview_runtime[stim_name]["x"],
@@ -343,7 +347,7 @@ if __name__ == "__main__":
                     state_entry = True
                 else:
                     current_trial = trials.iloc[trial]
-                    runtime = build_cp_trial_runtime(current_trial, geometry, rng)
+                    runtime = build_cp_trial_runtime_from_pairs(current_trial, pair_tables, rng)
                     response_key_raw = "none"
                     resp = ""
                     corr = 0
