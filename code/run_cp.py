@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Run standalone categorical perception task using PsychoPy.
+Run categorical perception task using PsychoPy.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import os
 import sys
 import random
 import numpy as np
 import pandas as pd
-from psychopy import core, visual  # type: ignore
+from psychopy import core, visual
 from psychopy.hardware import keyboard
 from util_func_eeg import EEGPort
 from util_func_pid import prompt_for_pid_in_set
@@ -18,16 +18,16 @@ from util_func_stimcat import build_cp_trial_runtime_from_pairs
 from util_func_stimcat import key_to_interval
 from util_func_stimcat import make_cp_pair_tables
 from util_func_stimcat import make_cp_trial_table
-from util_func_stimcat import now_iso
 from util_func_stimcat import plot_stim_space_examples
 from util_func_stimcat import stim_xy_to_sf_ori_deg
-
+from util_func_stimcat import transform_stim
 
 EEG_ENABLED = False
 EEG_PORT_ADDRESS = "0x3FB8"
 EEG_DEFAULT_PULSE_MS = 50
 
 TRIG = {
+    # -------------------- Experiment structure --------------------
     "EXP_START": 10,
     "EXP_END": 15,
     "CP_MAIN_BLOCK_START": 31,
@@ -36,10 +36,12 @@ TRIG = {
     "CP_PRACTICE_END": 34,
     "CP_ITI_ONSET": 40,
     "CP_INTERVAL2_ONSET": 42,
+    # -------------------- Responses --------------------
     "CP_RESPONSE_PROMPT_ONSET": 43,
     "CP_RESP_1": 44,
     "CP_RESP_2": 45,
     "CP_RESP_TIMEOUT": 46,
+    # -------------------- Stimulus onset --------------------
     "CP_STIM_WITHIN_A_NEAR_ONSET": 60,
     "CP_STIM_WITHIN_A_FAR_ONSET": 61,
     "CP_STIM_WITHIN_B_NEAR_ONSET": 62,
@@ -51,12 +53,30 @@ TRIG = {
 PID_DIGITS = 3
 MODE = "cp"
 ALLOWED_SUBJECT_IDS = {
-    "002", "077", "134", "189", "213", "268", "303", "358", "482",
-    "527", "594", "639", "662", "707", "729", "875", "943", "998", "999",
+    "002",
+    "077",
+    "134",
+    "189",
+    "213",
+    "268",
+    "303",
+    "358",
+    "482",
+    "527",
+    "594",
+    "639",
+    "662",
+    "707",
+    "729",
+    "875",
+    "943",
+    "998",
 }
 
 PIXELS_PER_INCH = 227 / 2
 PX_PER_CM = PIXELS_PER_INCH / 2.54
+SIZE_CM = 5
+SIZE_PX = int(SIZE_CM * PX_PER_CM)
 CP_PRACTICE_N = 24
 CP_PRACTICE_FAR_N = 16
 CP_PRACTICE_MODERATE_N = 8
@@ -74,9 +94,9 @@ PRACTICE_FEEDBACK_SEC = 0.6
 RESUME_WINDOW = timedelta(hours=12)
 NEW_SESSION_COOLDOWN = timedelta(hours=8)
 
-
 if __name__ == "__main__":
-    size_px = int(5 * PX_PER_CM)
+
+    # --------------------------- Display / geometry -------------------------------
 
     win = visual.Window(
         size=(1920, 1080),
@@ -90,17 +110,40 @@ if __name__ == "__main__":
     )
     win.mouseVisible = False
 
-    msg_text = visual.TextStim(win, text="", color="white", height=32, wrapWidth=1600)
-    prompt_text = visual.TextStim(win, text="", color="white", height=30, wrapWidth=1600, pos=(0, 0))
-    fix_h = visual.ShapeStim(win, vertices=[(-20, 0), (20, 0)], lineWidth=6, lineColor="white", closeShape=False)
-    fix_v = visual.ShapeStim(win, vertices=[(0, -20), (0, 20)], lineWidth=6, lineColor="white", closeShape=False)
+    # --------------------------- Stim objects ------------------------------------
+
+    msg_text = visual.TextStim(win,
+                               text="",
+                               color="white",
+                               height=32,
+                               wrapWidth=1600)
+
+    prompt_text = visual.TextStim(win,
+                                  text="",
+                                  color="white",
+                                  height=30,
+                                  wrapWidth=1600,
+                                  pos=(0, 0))
+
+    fix_h = visual.ShapeStim(win,
+                             vertices=[(-20, 0), (20, 0)],
+                             lineWidth=6,
+                             lineColor="white",
+                             closeShape=False)
+
+    fix_v = visual.ShapeStim(win,
+                             vertices=[(0, -20), (0, 20)],
+                             lineWidth=6,
+                             lineColor="white",
+                             closeShape=False)
+
     grating = visual.GratingStim(
         win,
         tex="sin",
         mask="circle",
         texRes=256,
         interpolate=True,
-        size=(size_px, size_px),
+        size=(SIZE_PX, SIZE_PX),
         units="pix",
         sf=0.02,
         ori=0.0,
@@ -108,17 +151,31 @@ if __name__ == "__main__":
         pos=(0, 0),
     )
 
+    instructions_text = (
+        "In each trial two stimulus pairs will flash on the screen (Interval 1 and Interval 2).\n"
+        "In one interval the two stimuli are different. In the other interval they are the same.\n"
+        "The stimuli can differ in bar thickness, angle, or both.\n"
+        "Press 1 if the different pair was in interval 1.\n"
+        "Press 2 if the different pair was in interval 2.\n"
+        "Please keep your eyes centered on the middle of the stimulus.\n"
+        "Try to respond as accurately as possible.\n\n"
+        "Press SPACE to continue.")
+
+    # --------------------------- response and clocks -----------------------------
     kb = keyboard.Keyboard()
     default_kb = keyboard.Keyboard()
     global_clock = core.Clock()
     state_clock = core.Clock()
     resp_clock = core.Clock()
 
-    dir_data = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+    # --------------------------- Subject handling --------------------------------
+    dir_data = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "data"))
     os.makedirs(dir_data, exist_ok=True)
 
     participant = prompt_for_pid_in_set(win, PID_DIGITS, ALLOWED_SUBJECT_IDS)
 
+    # ---------------------------  session handling -------------------------------
     session_info = resolve_session(
         dir_data,
         participant,
@@ -132,8 +189,8 @@ if __name__ == "__main__":
     full_path = session_info["full_path"]
     n_done = session_info["n_done"]
 
+    # --------------------------- Stimuli  ----------------------------------------
     seed = f"{participant}_{session_num:03d}_{MODE}"
-    rng = random.Random(seed)
     pair_tables = make_cp_pair_tables(pool_seed=f"{seed}_pool")
     trials = make_cp_trial_table(
         practice_far_n=CP_PRACTICE_FAR_N,
@@ -157,11 +214,13 @@ if __name__ == "__main__":
                 "x": preview_runtime[stim_name]["x"],
                 "y": preview_runtime[stim_name]["y"],
             })
-    cp_preview = pd.DataFrame(preview_rows).drop_duplicates().reset_index(drop=True)
+    cp_preview = pd.DataFrame(preview_rows).drop_duplicates().reset_index(
+        drop=True)
 
     # NOTE: Uncomment to visualise gratings in stim space
     # plot_stim_space_examples(cp_preview, win, grating, PX_PER_CM)
 
+    # --------------------------- EEG init ----------------------------------------
     eeg = EEGPort(
         win,
         address=EEG_PORT_ADDRESS,
@@ -169,17 +228,7 @@ if __name__ == "__main__":
         default_ms=EEG_DEFAULT_PULSE_MS,
     )
 
-    instructions_text = (
-        "In each trial two stimulus pairs will flash on the screen (Interval 1 and Interval 2).\n"
-        "In one interval the two stimuli are different. In the other interval they are the same.\n"
-        "The stimuli can differ in bar thickness, angle, or both.\n"
-        "Press 1 if the different pair was in interval 1.\n"
-        "Press 2 if the different pair was in interval 2.\n"
-        "Please keep your eyes centered on the middle of the stimulus.\n"
-        "Try to respond as accurately as possible.\n\n"
-        "Press SPACE to continue."
-    )
-
+    # --------------------------- EEG init ----------------------------------------
     trial_data = {
         "subject_id": [],
         "session_num": [],
@@ -217,11 +266,13 @@ if __name__ == "__main__":
         "port_address": [],
     }
 
-    def close_and_exit():
-        eeg.close()
-        win.close()
-        core.quit()
-        sys.exit()
+    flip_times = {
+        "t_i1": np.nan,
+        "t_i2": np.nan,
+    }
+
+    def make_trial_rng(trial_index, stream_name):
+        return random.Random(f"{seed}_{stream_name}_{int(trial_index):03d}")
 
     current_trial = None
     runtime = None
@@ -239,14 +290,13 @@ if __name__ == "__main__":
     trig_i1 = np.nan
     trig_i2 = np.nan
     trig_resp = np.nan
-    t_i1 = np.nan
-    t_i2 = np.nan
     t_resp = np.nan
 
     state_current = "state_init"
     state_entry = True
     running = True
 
+    # --------------------------- State machine setup ------------------------------
     while running:
         if default_kb.getKeys(keyList=["escape"], waitRelease=False):
             eeg.pulse_now(TRIG["EXP_END"], global_clock=global_clock)
@@ -254,6 +304,7 @@ if __name__ == "__main__":
 
         eeg.update(global_clock)
 
+        # --------------------- STATE: INIT ---------------------
         if state_current == "state_init":
             if state_entry:
                 state_clock.reset()
@@ -268,6 +319,7 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: INSTRUCTIONS ---------------------
         elif state_current == "state_instructions":
             if state_entry:
                 state_clock.reset()
@@ -286,6 +338,7 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: PRACTICE INTRO ---------------------
         elif state_current == "state_practice_intro":
             if state_entry:
                 state_clock.reset()
@@ -295,16 +348,19 @@ if __name__ == "__main__":
             msg_text.draw()
             keys = kb.getKeys(keyList=["space"], waitRelease=False, clear=True)
             if keys:
-                eeg.flip_pulse(TRIG["CP_PRACTICE_START"], global_clock=global_clock)
+                eeg.flip_pulse(TRIG["CP_PRACTICE_START"],
+                               global_clock=global_clock)
                 practice_started = True
                 state_current = "state_iti"
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: MAIN INTRO ---------------------
         elif state_current == "state_main_intro":
             if state_entry:
                 if practice_started and not practice_finished:
-                    eeg.pulse_now(TRIG["CP_PRACTICE_END"], global_clock=global_clock)
+                    eeg.pulse_now(TRIG["CP_PRACTICE_END"],
+                                  global_clock=global_clock)
                     practice_finished = True
                 state_clock.reset()
                 msg_text.text = (
@@ -313,24 +369,28 @@ if __name__ == "__main__":
                     "The main trials will be harder. Please try and respond as accurately as possible.\n"
                     "Keep your eyes centered on the middle of the stimulus.\n"
                     "Remember: 1 = interval 1, 2 = interval 2.\n\n"
-                    "Press SPACE to begin."
-                )
+                    "Press SPACE to begin.")
                 state_entry = False
 
             msg_text.draw()
             keys = kb.getKeys(keyList=["space"], waitRelease=False, clear=True)
             if keys:
-                eeg.flip_pulse(TRIG["CP_MAIN_BLOCK_START"], global_clock=global_clock)
+                eeg.flip_pulse(TRIG["CP_MAIN_BLOCK_START"],
+                               global_clock=global_clock)
                 main_started = True
                 state_current = "state_iti"
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: ITI ---------------------
         elif state_current == "state_iti":
             if state_entry:
                 state_clock.reset()
                 eeg.flip_pulse(TRIG["CP_ITI_ONSET"], global_clock=global_clock)
-                iti_sec = ITI_SEC + rng.uniform(ITI_JITTER_SEC[0], ITI_JITTER_SEC[1])
+                next_trial = trial + 1
+                iti_rng = make_trial_rng(next_trial, "iti")
+                iti_sec = ITI_SEC + iti_rng.uniform(ITI_JITTER_SEC[0],
+                                                    ITI_JITTER_SEC[1])
                 state_entry = False
 
             fix_h.draw()
@@ -340,14 +400,21 @@ if __name__ == "__main__":
                 trial += 1
                 if trial >= len(trials):
                     if not practice_finished and practice_started:
-                        eeg.pulse_now(TRIG["CP_PRACTICE_END"], global_clock=global_clock)
+                        eeg.pulse_now(TRIG["CP_PRACTICE_END"],
+                                      global_clock=global_clock)
                     if main_started:
-                        eeg.pulse_now(TRIG["CP_MAIN_BLOCK_END"], global_clock=global_clock)
+                        eeg.pulse_now(TRIG["CP_MAIN_BLOCK_END"],
+                                      global_clock=global_clock)
                     state_current = "state_finished"
                     state_entry = True
                 else:
                     current_trial = trials.iloc[trial]
-                    runtime = build_cp_trial_runtime_from_pairs(current_trial, pair_tables, rng)
+                    runtime_rng = make_trial_rng(trial, "runtime")
+                    runtime = build_cp_trial_runtime_from_pairs(
+                        current_trial,
+                        pair_tables,
+                        runtime_rng,
+                    )
                     response_key_raw = "none"
                     resp = ""
                     corr = 0
@@ -355,8 +422,8 @@ if __name__ == "__main__":
                     feedback = ""
                     trig_resp = np.nan
                     t_resp = np.nan
-                    t_i1 = np.nan
-                    t_i2 = np.nan
+                    flip_times["t_i1"] = np.nan
+                    flip_times["t_i2"] = np.nan
 
                     trig_i1 = np.nan
                     if current_trial["phase"] == "main":
@@ -387,12 +454,13 @@ if __name__ == "__main__":
                     state_entry = True
             win.flip()
 
+        # --------------------- STATE: INTERVAL 1A ---------------------
         elif state_current == "state_interval1a":
             if state_entry:
                 state_clock.reset()
                 if not np.isnan(trig_i1):
                     eeg.flip_pulse(int(trig_i1), global_clock=global_clock)
-                t_i1 = global_clock.getTime()
+                win.callOnFlip(lambda: flip_times.__setitem__("t_i1", global_clock.getTime()))
                 state_entry = False
 
             grating.draw()
@@ -402,6 +470,7 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: GAP 1 ---------------------
         elif state_current == "state_gap1":
             if state_entry:
                 state_clock.reset()
@@ -420,6 +489,7 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: INTERVAL 1B ---------------------
         elif state_current == "state_interval1b":
             if state_entry:
                 state_clock.reset()
@@ -432,6 +502,7 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: ISI ---------------------
         elif state_current == "state_isi":
             if state_entry:
                 state_clock.reset()
@@ -453,12 +524,14 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: INTERVAL 2A ---------------------
         elif state_current == "state_interval2a":
             if state_entry:
                 state_clock.reset()
-                eeg.flip_pulse(TRIG["CP_INTERVAL2_ONSET"], global_clock=global_clock)
+                eeg.flip_pulse(TRIG["CP_INTERVAL2_ONSET"],
+                               global_clock=global_clock)
+                win.callOnFlip(lambda: flip_times.__setitem__("t_i2", global_clock.getTime()))
                 trig_i2 = int(TRIG["CP_INTERVAL2_ONSET"])
-                t_i2 = global_clock.getTime()
                 state_entry = False
 
             grating.draw()
@@ -468,6 +541,7 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: GAP 2 ---------------------
         elif state_current == "state_gap2":
             if state_entry:
                 state_clock.reset()
@@ -486,6 +560,7 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: INTERVAL 2B ---------------------
         elif state_current == "state_interval2b":
             if state_entry:
                 state_clock.reset()
@@ -498,20 +573,24 @@ if __name__ == "__main__":
                 state_entry = True
             win.flip()
 
+        # --------------------- STATE: RESPONSE ---------------------
         elif state_current == "state_response":
             if state_entry:
                 state_clock.reset()
                 resp_clock.reset()
                 kb.clearEvents()
                 prompt_text.text = "Which interval had the different pair?\n1 = Interval 1, 2 = Interval 2"
-                eeg.flip_pulse(TRIG["CP_RESPONSE_PROMPT_ONSET"], global_clock=global_clock)
+                eeg.flip_pulse(TRIG["CP_RESPONSE_PROMPT_ONSET"],
+                               global_clock=global_clock)
                 win.callOnFlip(kb.clock.reset)
                 win.callOnFlip(resp_clock.reset)
                 state_entry = False
 
             prompt_text.draw()
 
-            keys = kb.getKeys(keyList=["1", "2", "num_1", "num_2"], waitRelease=False, clear=False)
+            keys = kb.getKeys(keyList=["1", "2", "num_1", "num_2"],
+                              waitRelease=False,
+                              clear=False)
             if keys:
                 response_key_raw = keys[-1].name
                 picked = key_to_interval(response_key_raw)
@@ -530,7 +609,8 @@ if __name__ == "__main__":
                 state_current = "state_feedback"
                 state_entry = True
             elif resp_clock.getTime() >= RESP_WINDOW_SEC:
-                eeg.pulse_now(TRIG["CP_RESP_TIMEOUT"], global_clock=global_clock)
+                eeg.pulse_now(TRIG["CP_RESP_TIMEOUT"],
+                              global_clock=global_clock)
                 trig_resp = int(TRIG["CP_RESP_TIMEOUT"])
                 t_resp = global_clock.getTime()
                 state_current = "state_feedback"
@@ -538,6 +618,7 @@ if __name__ == "__main__":
 
             win.flip()
 
+        # --------------------- STATE: FEEDBACK ---------------------
         elif state_current == "state_feedback":
             if state_entry:
                 state_clock.reset()
@@ -574,8 +655,8 @@ if __name__ == "__main__":
                 trial_data["trigger_i1"].append(trig_i1)
                 trial_data["trigger_i2"].append(trig_i2)
                 trial_data["trigger_resp"].append(trig_resp)
-                trial_data["t_i1"].append(t_i1)
-                trial_data["t_i2"].append(t_i2)
+                trial_data["t_i1"].append(flip_times["t_i1"])
+                trial_data["t_i2"].append(flip_times["t_i2"])
                 trial_data["t_resp"].append(t_resp)
                 trial_data["i1a_x"].append(runtime["int1a"]["x"])
                 trial_data["i1a_y"].append(runtime["int1a"]["y"])
@@ -585,9 +666,10 @@ if __name__ == "__main__":
                 trial_data["i2a_y"].append(runtime["int2a"]["y"])
                 trial_data["i2b_x"].append(runtime["int2b"]["x"])
                 trial_data["i2b_y"].append(runtime["int2b"]["y"])
-                trial_data["ts_iso"].append(now_iso())
+                trial_data["ts_iso"].append(datetime.now().isoformat())
                 trial_data["eeg_enabled"].append(int(bool(EEG_ENABLED)))
-                trial_data["port_address"].append(EEG_PORT_ADDRESS if EEG_ENABLED else "")
+                trial_data["port_address"].append(
+                    EEG_PORT_ADDRESS if EEG_ENABLED else "")
 
                 pd.DataFrame(trial_data).to_csv(full_path, index=False)
 
@@ -597,10 +679,12 @@ if __name__ == "__main__":
                 prompt_text.draw()
                 if state_clock.getTime() >= PRACTICE_FEEDBACK_SEC:
                     if trial >= len(trials) - 1:
-                        eeg.pulse_now(TRIG["CP_PRACTICE_END"], global_clock=global_clock)
+                        eeg.pulse_now(TRIG["CP_PRACTICE_END"],
+                                      global_clock=global_clock)
                         state_current = "state_finished"
                     elif trials.iloc[trial + 1]["phase"] == "main":
-                        eeg.pulse_now(TRIG["CP_PRACTICE_END"], global_clock=global_clock)
+                        eeg.pulse_now(TRIG["CP_PRACTICE_END"],
+                                      global_clock=global_clock)
                         practice_finished = True
                         state_current = "state_main_intro"
                     else:
@@ -608,7 +692,8 @@ if __name__ == "__main__":
                     state_entry = True
             else:
                 if trial >= len(trials) - 1:
-                    eeg.pulse_now(TRIG["CP_MAIN_BLOCK_END"], global_clock=global_clock)
+                    eeg.pulse_now(TRIG["CP_MAIN_BLOCK_END"],
+                                  global_clock=global_clock)
                     state_current = "state_finished"
                 else:
                     state_current = "state_iti"
@@ -616,6 +701,7 @@ if __name__ == "__main__":
 
             win.flip()
 
+        # --------------------- STATE: FINISHED ---------------------
         elif state_current == "state_finished":
             if state_entry:
                 state_clock.reset()
@@ -629,4 +715,8 @@ if __name__ == "__main__":
                 running = False
             win.flip()
 
-    close_and_exit()
+    # --------------------------- Cleanup ------------------------------------------
+    eeg.close()
+    win.close()
+    core.quit()
+    sys.exit()

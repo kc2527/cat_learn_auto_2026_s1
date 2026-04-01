@@ -4,15 +4,20 @@ Run category learning experiment using PsychoPy.
 """
 
 from datetime import datetime, timedelta
+import hashlib
 import os
+import sys
 import numpy as np
 import pandas as pd
-from psychopy import visual, core  # type: ignore
+from psychopy import visual, core
 from psychopy.hardware import keyboard
 from util_func_eeg import EEGPort
 from util_func_pid import prompt_for_pid
 from util_func_session_man import resolve_session
-from util_func_stimcat import *
+from util_func_stimcat import make_stim_cats
+from util_func_stimcat import plot_stim_space_examples
+from util_func_stimcat import stim_xy_to_sf_ori_deg
+from util_func_stimcat import transform_stim
 
 EEG_ENABLED = False
 EEG_PORT_ADDRESS = '0x3FD8'
@@ -74,10 +79,21 @@ CONDITION_BY_SUBJECT = {
     "943": 180,
     "998": 180,
 }
+
+PIXELS_PER_INCH = 227 / 2
+PX_PER_CM = PIXELS_PER_INCH / 2.54
+SIZE_CM = 5
+SIZE_PX = int(SIZE_CM * PX_PER_CM)
 RESUME_WINDOW = timedelta(hours=12)
 NEW_SESSION_COOLDOWN = timedelta(hours=8)
 
 # ----------------------------------------------------------------------------------
+
+
+def stable_int_seed(label):
+    digest = hashlib.sha256(str(label).encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") % (2**32)
+
 
 if __name__ == "__main__":
 
@@ -92,10 +108,6 @@ if __name__ == "__main__":
     n_total = n_train + n_test
 
     # --------------------------- Display / geometry -------------------------------
-    pixels_per_inch = 227 / 2
-    px_per_cm = pixels_per_inch / 2.54
-    size_cm = 5
-    size_px = int(size_cm * px_per_cm)
 
     win = visual.Window(
         size=(1920, 1080),
@@ -108,8 +120,6 @@ if __name__ == "__main__":
         waitBlanking=True,
     )
     win.mouseVisible = False
-    frame_rate = win.getActualFrameRate()
-    center_x, center_y = 0, 0
 
     # --------------------------- Stim objects ------------------------------------
     fix_h = visual.Line(win,
@@ -139,20 +149,21 @@ if __name__ == "__main__":
                                  mask='circle',
                                  texRes=256,
                                  interpolate=True,
-                                 size=(size_px, size_px),
+                                 size=(SIZE_PX, SIZE_PX),
                                  units='pix',
                                  sf=0.0,
                                  ori=0.0)
 
     fb_ring = visual.Circle(win,
-                            radius=(size_px // 2 + 10),
+                            radius=(SIZE_PX // 2 + 10),
                             edges=128,
                             fillColor=None,
                             lineColor='white',
                             lineWidth=10,
                             units='pix',
-                            pos=(center_x, center_y))
+                            pos=(0, 0))
 
+    # --------------------------- response and clocks -----------------------------
     kb = keyboard.Keyboard()
     default_kb = keyboard.Keyboard()
 
@@ -161,51 +172,11 @@ if __name__ == "__main__":
     stim_clock = core.Clock()
 
     # --------------------------- Subject handling --------------------------------
-    dir_data = "../data"
+    dir_data = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "data"))
     os.makedirs(dir_data, exist_ok=True)
 
     subject, condition = prompt_for_pid(win, PID_DIGITS, CONDITION_BY_SUBJECT)
-
-    # --------------------------- Stimuli and Categories  ---------------------------
-    n_stimuli_per_category = n_total // 2
-    ds, ds_90, ds_180 = make_stim_cats(n_stimuli_per_category)
-
-    ds_train = ds.copy()
-    ds_train = ds_train.sample(frac=1).reset_index(drop=True)
-    ds_train = ds_train.iloc[:n_train, :]
-    ds_train["phase"] = "train"
-
-    if condition == 90:
-        ds_test = ds_90.copy()
-    elif condition == 180:
-        ds_test = ds_180.copy()
-
-    ds_test = ds_test.sample(frac=1).reset_index(drop=True)
-    ds_test = ds_test.iloc[:n_test, :]
-    ds_test["phase"] = "test"
-
-    ds = pd.concat([ds_train, ds_test]).reset_index(drop=True)
-
-    # NOTE: Uncomment to visualize stimulus space scatter
-    # import matplotlib.pyplot as plt
-    # import seaborn as sns
-    # fig, ax = plt.subplots(1, 3, squeeze=False, figsize=(6, 6))
-    # sns.scatterplot(data=ds, x='x', y='y', hue='cat', ax=ax[0, 0])
-    # sns.scatterplot(data=ds, x='xt', y='yt', hue='cat', ax=ax[0, 1])
-    # ds['yt_deg'] = ds['yt'] * 180.0 / np.pi
-    # sns.scatterplot(data=ds, x='xt', y='yt_deg', hue='cat', ax=ax[0, 2])
-    # plt.show()
-
-    # # NOTE: Uncomment to visualise gratings in stim space
-    # x = np.array([25, 50, 75]) 
-    # x_A = x - 10
-    # x_B = x + 10
-    # y_A = x + 10
-    # y_B = x - 10
-    # x = np.concat([x_A, x_B])
-    # y = np.concat([y_A, y_B])
-    # dss = pd.DataFrame({'x':x, 'y':y})
-    # plot_stim_space_examples(dss, win, grating, px_per_cm)
 
     # ---------------------------  session handling -------------------------------
     session_info = resolve_session(
@@ -221,6 +192,56 @@ if __name__ == "__main__":
     f_name = session_info["f_name"]
     full_path = session_info["full_path"]
     n_done = session_info["n_done"]
+
+    # --------------------------- Stimuli and Categories  ---------------------------
+    session_seed = stable_int_seed(f"{subject}_{session_num:03d}_exp")
+    schedule_rng = np.random.default_rng(session_seed)
+    n_stimuli_per_category = n_total // 2
+    ds, ds_90, ds_180 = make_stim_cats(
+        n_stimuli_per_category,
+        random_seed=session_seed,
+    )
+
+    ds_train = ds.copy()
+    ds_train = ds_train.sample(
+        frac=1,
+        random_state=int(schedule_rng.integers(0, 2**32 - 1)),
+    ).reset_index(drop=True)
+    ds_train = ds_train.iloc[:n_train, :]
+    ds_train["phase"] = "train"
+
+    if condition == 90:
+        ds_test = ds_90.copy()
+    elif condition == 180:
+        ds_test = ds_180.copy()
+
+    ds_test = ds_test.sample(
+        frac=1,
+        random_state=int(schedule_rng.integers(0, 2**32 - 1)),
+    ).reset_index(drop=True)
+    ds_test = ds_test.iloc[:n_test, :]
+    ds_test["phase"] = "test"
+
+    ds = pd.concat([ds_train, ds_test]).reset_index(drop=True)
+
+    # NOTE: Uncomment to visualize stimulus space scatter
+    # import matplotlib.pyplot as plt
+    # import seaborn as sns
+    # fig, ax = plt.subplots(1, 3, squeeze=False, figsize=(6, 6))
+    # sns.scatterplot(data=ds, x='x', y='y', hue='cat', ax=ax[0, 0])
+    # sns.scatterplot(data=ds, x='xt', y='yt', hue='cat', ax=ax[0, 1])
+    # plt.show()
+
+    # # NOTE: Uncomment to visualise gratings in stim space
+    # x = np.array([25, 50, 75])
+    # x_A = x - 10
+    # x_B = x + 10
+    # y_A = x + 10
+    # y_B = x - 10
+    # x = np.concat([x_A, x_B])
+    # y = np.concat([y_A, y_B])
+    # dss = pd.DataFrame({'x':x, 'y':y})
+    # plot_stim_space_examples(dss, win, grating, PX_PER_CM)
 
     trial = n_done - 1
 
@@ -250,6 +271,7 @@ if __name__ == "__main__":
     trig_stim = np.nan
     trig_resp = np.nan
     trig_fb = np.nan
+    t_resp = np.nan
 
     # Record keeping
     trial_data = {
@@ -268,12 +290,20 @@ if __name__ == "__main__":
         "trigger_stim": [],
         "trigger_resp": [],
         "trigger_fb": [],
+        "t_stim": [],
+        "t_resp": [],
+        "t_fb": [],
         "port_address": [],
         "probe_condition": [],
         "x": [],
         "y": [],
         "xt": [],
         "yt": []
+    }
+
+    flip_times = {
+        "t_stim": np.nan,
+        "t_fb": np.nan,
     }
 
     # --------------------------- Main loop ---------------------------------------
@@ -332,28 +362,32 @@ if __name__ == "__main__":
                 resp = ""
                 fb = ""
                 rt = -1
+                t_resp = np.nan
                 state_clock.reset()
                 trial += 1
                 if trial >= n_total:
                     state_current = "state_finished"
                     state_entry = True
                 else:
-                    sf_cycles_per_cm = ds['xt'].iloc[trial]
-                    sf_cycles_per_pix = sf_cycles_per_cm / px_per_cm
-                    ori_deg = ds['yt'].iloc[trial] * 180.0 / np.pi
+                    sf_cycles_per_pix, ori_deg = stim_xy_to_sf_ori_deg(
+                        ds['x'].iloc[trial],
+                        ds['y'].iloc[trial],
+                        PX_PER_CM,
+                    )
                     cat = str(ds['cat'].iloc[trial]).upper()
                     if cat not in {"A", "B"}:
                         raise ValueError(
-                            f"Category labels must be 'A' or 'B'. Got: {cat}"
-                        )
+                            f"Category labels must be 'A' or 'B'. Got: {cat}")
                     phase = ds['phase'].iloc[trial]
                     trig_stim = np.nan
                     trig_resp = np.nan
                     trig_fb = np.nan
+                    flip_times["t_stim"] = np.nan
+                    flip_times["t_fb"] = np.nan
 
                     grating.sf = sf_cycles_per_pix
                     grating.ori = ori_deg
-                    grating.pos = (center_x, center_y)
+                    grating.pos = (0, 0)
 
                     kb.clearEvents()
                     gap_ms = np.random.randint(200, 401)
@@ -402,6 +436,7 @@ if __name__ == "__main__":
                 state_clock.reset()
                 stim_clock.reset()
 
+                win.callOnFlip(lambda: flip_times.__setitem__("t_stim", global_clock.getTime()))
                 win.callOnFlip(kb.clock.reset)
                 state_entry = False
 
@@ -435,6 +470,7 @@ if __name__ == "__main__":
                 if not np.isnan(trig):
                     eeg.pulse_now(trig, global_clock=global_clock)
                     trig_resp = int(trig)
+                t_resp = global_clock.getTime()
 
                 if cat == resp_label:
                     fb = "Correct"
@@ -489,6 +525,7 @@ if __name__ == "__main__":
                     eeg.flip_pulse(trig, global_clock=global_clock)
                     trig_fb = int(trig)
 
+                win.callOnFlip(lambda: flip_times.__setitem__("t_fb", global_clock.getTime()))
                 state_clock.reset()
                 state_entry = False
 
@@ -498,8 +535,9 @@ if __name__ == "__main__":
             fb_ring.draw()
 
             if time_state > 1000:
-                ts_iso = datetime.now().isoformat()
+
                 probe_condition = condition
+                xt, yt = transform_stim(ds["x"].iloc[trial], ds["y"].iloc[trial])
 
                 trial_data["subject_id"].append(subject)
                 trial_data["session_num"].append(session_num)
@@ -511,17 +549,21 @@ if __name__ == "__main__":
                 trial_data["resp"].append(resp)
                 trial_data["fb"].append(fb)
                 trial_data["rt"].append(rt)
-                trial_data["ts_iso"].append(ts_iso)
+                trial_data["ts_iso"].append(datetime.now().isoformat())
                 trial_data["eeg_enabled"].append(int(bool(EEG_ENABLED)))
                 trial_data["trigger_stim"].append(trig_stim)
                 trial_data["trigger_resp"].append(trig_resp)
                 trial_data["trigger_fb"].append(trig_fb)
-                trial_data["port_address"].append(EEG_PORT_ADDRESS if EEG_ENABLED else "")
+                trial_data["t_stim"].append(flip_times["t_stim"])
+                trial_data["t_resp"].append(t_resp)
+                trial_data["t_fb"].append(flip_times["t_fb"])
+                trial_data["port_address"].append(
+                    EEG_PORT_ADDRESS if EEG_ENABLED else "")
                 trial_data["probe_condition"].append(probe_condition)
                 trial_data["x"].append(ds["x"].iloc[trial])
                 trial_data["y"].append(ds["y"].iloc[trial])
-                trial_data["xt"].append(ds["xt"].iloc[trial])
-                trial_data["yt"].append(ds["yt"].iloc[trial])
+                trial_data["xt"].append(xt)
+                trial_data["yt"].append(yt)
 
                 pd.DataFrame(trial_data).to_csv(full_path, index=False)
 
@@ -535,3 +577,4 @@ if __name__ == "__main__":
     eeg.close()
     win.close()
     core.quit()
+    sys.exit()
