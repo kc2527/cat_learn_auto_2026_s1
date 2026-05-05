@@ -28,262 +28,217 @@ for fd in os.listdir(dir_data_lab):
     if os.path.isdir(dir_data_lab_fd):
         for fs in os.listdir(dir_data_lab_fd):
             f_full_path = os.path.join(dir_data_lab_fd, fs)
-            if os.path.isfile(f_full_path):
+            if os.path.isfile(f_full_path) and fs.endswith(".csv"):
 
-                # on day 1, participant 875 did 10 train trials and 60 probe trials
-                # taking first 10 train trials and adding it to part 2 (540 train,
-                # 100 probe) -- excluding for the moment
+                # in session 1, participant 875 did 10 train trials and 60
+                # probe trials taking first 10 train trials and adding it to
+                # part 2 (540 train, 100 probe) -- excluding for the moment
+
+                # in session 4, ActiView had a syncing error and crached 30
+                # trials in with participant 875, restarted experiment clean --
+                # removing extra data file
                 if fs not in ['sub_875_sess_001_part_001_date_2026_04_03_data.csv',
-                              'sub_875_sess_001_part_002_date_2026_04_03_data.csv']:
+                              'sub_875_sess_001_part_002_date_2026_04_03_data.csv',
+                              'sub_875_sess_004_part_001_date_2026_04_24_data (1).csv'
+                              ]:
 
                     df = pd.read_csv(f_full_path)
                     df['f_name'] = fs
                     df_lab_rec.append(df)
 
-df_home = pd.concat(df_train_rec, ignore_index=True)
-df_lab = pd.concat(df_lab_rec, ignore_index=True)
+d_home = pd.concat(df_train_rec, ignore_index=True)
+d_lab = pd.concat(df_lab_rec, ignore_index=True)
 
 block_size = 25
 
-# -- Home -- 
-df_home = df_home.sort_values(
-    ["subject_id", "session_num", "session_part", "trial"]).reset_index(drop=True)
-df_home = df_home[df_home['session_num'] != 17]
+# NOTE: Setting dfs up 
+# at-home data
+# 300 trials -- train
+d_home = d_home.sort_values(["subject_id", "session_num", "session_part",
+                               "trial"]).reset_index(drop=True)
+d_home = d_home[d_home['session_num'] != 17]
 
-df_home['acc'] = (df_home['cat'] == df_home['resp']).astype(int)
-df_home['trial'] = df_home.groupby(['subject_id', 'session_num']).cumcount()
-df_home['n_trials'] = df_home.groupby(['subject_id', 'session_num'])['trial'].transform('count')
-df_home['block'] = df_home.groupby(['subject_id', 'session_num'])['trial'].transform(lambda x: x // block_size)
-df_home = df_home.drop(columns=['value_left', 'size_left', 'value_right',
+d_home['acc'] = (d_home['cat'] == d_home['resp']).astype(int)
+d_home['trial'] = d_home.groupby(['subject_id', 'session_num']).cumcount()
+d_home['n_trials'] = d_home.groupby(['subject_id', 'session_num'])['trial'].transform('count')
+d_home['block'] = d_home.groupby(['subject_id', 'session_num'])['trial'].transform(lambda x: x // block_size)
+d_home = d_home.drop(columns=['value_left', 'size_left', 'value_right',
                                 'size_right', 'congruency', 'cue',
                                 'resp_key_ns', 'resp_ns', 'fb_ns', 'rt_ns',
                                 't_cue_ns', 't_fb_ns'])
 
-dd_home = (
-    df_home.groupby(["subject_id", "session_num", "block"], as_index=False)["acc"]
-    .mean()
-    .sort_values(["session_num", "subject_id", "block"])
-)
+# dual task day (17)
+# 300 trials -- train + numerical stroop
+d_dt = d_home.sort_values(["subject_id", "session_num", "session_part",
+                             "trial"]).reset_index(drop=True)
+d_dt = d_dt[d_dt['session_num'] == 17]
 
-days_home = dd_home["session_num"].unique()[:16]  # no sorted()
+# TODO: next line raises error
+d_dt['acc'] = (d_dt['cat'] == d_home['resp']).astype(int)
+d_dt['trial'] = d_dt.groupby(['subject_id', 'session_num']).cumcount()
+d_dt['n_trials'] = d_dt.groupby(['subject_id', 'session_num'])['trial'].transform('count')
+d_dt['block'] = d_dt.groupby(['subject_id', 'session_num'])['trial'].transform(lambda x: x // block_size)
 
-# -- Dual Task (17) --
-df_dt = df_home.sort_values(
-    ["subject_id", "session_num", "session_part", "trial"]).reset_index(drop=True)
-df_dt = df_dt[df_dt['session_num'] == 17]
+# lab data 
+# 550 trials -- train, 100 trials -- test
+d_lab = d_lab.sort_values(["subject_id", "session_num", "session_part",
+                             "trial"]).reset_index(drop=True)
 
-df_dt['acc'] = (df_dt['cat'] == df_home['resp']).astype(int)
-df_dt['trial'] = df_dt.groupby(['subject_id', 'session_num']).cumcount()
-df_dt['n_trials'] = df_dt.groupby(['subject_id', 'session_num'])['trial'].transform('count')
-df_dt['block'] = df_dt.groupby(['subject_id', 'session_num'])['trial'].transform(lambda x: x // block_size)
+d_lab['acc'] = (d_lab['cat'] == d_lab['resp']).astype(int)
+d_lab['trial'] = d_lab.groupby(['subject_id', 'session_num']).cumcount()
+d_lab['n_trials'] = d_lab.groupby(['subject_id', 'session_num'])['trial'].transform('count')
+d_lab['block'] = d_lab.groupby(['subject_id', 'session_num'])['trial'].transform(lambda x: x // block_size)
 
-# -- Lab --
-df_lab = df_lab.sort_values(
-    ["subject_id", "session_num", "session_part", "trial"]).reset_index(drop=True)
+# ds for all, train, and test trials 
+d_lab_all = (d_lab.groupby(["subject_id", "session_num", "block",
+                              "probe_condition", "phase"],
+                             as_index=False)["acc"].mean().sort_values(["session_num",
+                                                                        "subject_id",
+                                                                        "block"]))
 
-df_lab['acc'] = (df_lab['cat'] == df_lab['resp']).astype(int)
-df_lab['trial'] = df_lab.groupby(['subject_id', 'session_num']).cumcount()
-df_lab['n_trials'] = df_lab.groupby(['subject_id', 'session_num'])['trial'].transform('count')
-df_lab['block'] = df_lab.groupby(['subject_id', 'session_num'])['trial'].transform(lambda x: x // block_size)
-
-df_lab_all = df_lab.groupby(["subject_id", "session_num", "block", "probe_condition"], as_index=False)["acc"] .mean().sort_values(["session_num", "subject_id", "block"])
-
-df_lab_train = df_lab[df_lab['phase'] == 'train'].groupby(['subject_id',
+d_lab_train = d_lab[d_lab['phase'] == 'train'].groupby(['subject_id',
                                                            'session_num',
                                                            'probe_condition',
                                                            'block']).agg({'acc':
                                                                           'mean'}).reset_index()
-df_lab_test = df_lab[df_lab['phase'] == 'test'].groupby(['subject_id',
+
+d_lab_test = d_lab[d_lab['phase'] == 'test'].groupby(['subject_id',
                                                          'session_num',
                                                          'probe_condition',
                                                          'block']).agg({'acc':
                                                                         'mean'}).reset_index()
 
-days_lab = dd_lab["session_num"].unique()[:5]  # no sorted()
+# NOTE: Inspect performance
+# average accuracy per lab day
+d_lab_pd_avg = d_lab_train.groupby(['subject_id', 'session_num']).agg({'acc': 'mean'}).reset_index()
 
-# -- Plots --
-# HOME: Plot whole expt across all days 
-fig, axes = plt.subplots(1, len(days_home), figsize=(24, 3.5), sharey=True)
-for ax, day in zip(axes, days_home):
-    sns.lineplot(
-        data=dd_home[dd_home["session_num"] == day],
-        x="block",
-        y="acc",
-        hue="subject_id",
-        units="subject_id",
-        estimator=None,
-        legend=False,
-        alpha=0.5,
-        lw=1,
-        ax=ax,
-    )
-    ax.set_title(f"Day {day}")
-    ax.set_xlabel("Block")
-    ax.set_ylim(0, 1)
+# looking for average day accuracies below 75% after the first lab session 
+below_exp = d_lab_pd_avg[(d_lab_pd_avg['acc'] < 0.75) & (d_lab_pd_avg['session_num'] != 1)]
 
-axes[0].set_ylabel("Accuracy")
-for ax in axes[1:]:
-    ax.set_ylabel("")
+# participants 2, 189, and 639 have below 70% accuracy by the end of lab day 2
+# (after 6 sessions) -- inspecting at home performance 
+home_inspect = d_home[(d_home['subject_id'] == 2) |
+                       (d_home['subject_id'] == 189) |
+                       (d_home['subject_id'] == 639)]
 
-plt.tight_layout()
-plt.show()
+# at-home data shows that they are not breaking 80% at home by days 7, 6, and 4
+# respectively
+home_pd_avg = home_inspect.groupby(['subject_id', 'session_num']).agg({'acc': 'mean'}).reset_index()
 
-# HOME: Plot mean of each day
-dd_home_day = dd_home.groupby(['subject_id', 'session_num']).agg({'acc': 'mean'}).reset_index()
+# NOTE: Plots 
+# -- HOME -- 
+days_home = d_home["session_num"].unique()[:16]
 
-fig, ax = plt.subplots(1, 1, squeeze=False)
-sns.pointplot(data=dd_home_day, x='session_num', y='acc', errorbar=('se'), ax=ax[0,0])
-plt.tight_layout()
-plt.show()
+# accuracy across task across days
+fig, axes = plt.subplots(2, len(days_home), squeeze = False)
 
-# LAB: Plot whole expt across all days
-extra_blocks = df_lab_all.loc[df_lab_all['block'] > 26]
+# average accuracy in task across days
 
-fig, axes = plt.subplots(1, 5, figsize=(24, 3.5), sharey=True)
-for ax, day in zip(axes, days_lab):
-    sns.lineplot(
-        data=df_lab_all[df_lab_all["session_num"] == day],
-        x="block",
-        y="acc",
-        hue="subject_id",
-        units="subject_id",
-        estimator=None,
-        legend=False,
-        alpha=0.5,
-        lw=1,
-        ax=ax,
-    )
-    ax.set_title(f"Day {day}")
-    ax.set_xlabel("Block")
-    ax.set_ylim(0, 1)
 
-axes[0].set_ylabel("Accuracy")
-for ax in axes[1:]:
-    ax.set_ylabel("")
+# -- DUAL TASK --
+# average accuracy in task
 
-plt.tight_layout()
-plt.show()
 
-# LAB: Plot each participants average accuracy per day
-df_lab_pd_avg = df_lab_train.groupby(['subject_id', 'session_num']).agg({'acc': 'mean'}).reset_index()
+# average accuracy compared to last at home day and last lab day
 
-days_lab = df_lab_pd_avg["session_num"].unique()[:5]
 
-fig, axes = plt.subplots(1, len(days_lab), squeeze = False)
-for axes, day in zip(axes, days_lab):
-    sns.pointplot(
-        data=df_lab_pd_avg[df_lab_pd_avg["session_num"] == day],
-        x="subject_id",
-        y="acc",
-        estimator=None,
-        legend=False,
-        ax=ax,
-    )
-    ax.set_title(f"Day {day}")
-    ax.set_xlabel("Block")
-    ax.set_ylim(0, 1)
+# -- LAB --
+days_lab = d_lab["session_num"].unique()[:5]
 
-axes[0].set_ylabel("Accuracy")
-for ax in axes[1:]:
-    ax.set_ylabel("")
+# accuracy across task across days
 
-plt.tight_layout()
-plt.show()
 
-fig, axes = plt.subplots(1, len(days_lab), squeeze=False)
-axes = axes.flatten()
 
-for ax, day in zip(axes, days_lab):
-    dday = df_lab_pd_avg[df_lab_pd_avg["session_num"] == day]
-    if dday.empty:
-        ax.set_visible(False)
-        continue
+# average accuracy in task across days
 
-    sns.pointplot(
-        data=dday,
-        x="subject_id",
-        y="acc",
-        errorbar=None,
-        ax=ax,
-    )
-    ax.set_title(f"Day {day}")
-    ax.set_xlabel("Subject")
-    ax.set_ylim(0, 1)
 
-axes[0].set_ylabel("Accuracy")
-for ax in axes[1:]:
-    ax.set_ylabel("")
+# average accuracy across participants across days
 
-plt.tight_layout()
-plt.show()
 
-# LAB: Plot mean of each day
-dd_lab_day = df_lab_train.groupby(['subject_id', 'session_num',
-                             'probe_condition']).agg({'acc':
-                                                      'mean'}).reset_index()
+# 90 vs 180 cost
+# take participants 134, 213, 268, 358, and 482 session 1 out of d as they
+# completed 650 trials of train, no test trials were completed
+d_cost = d_lab_all.copy() 
 
-fig, ax = plt.subplots(1, 1, squeeze=False)
-sns.pointplot(data=dd_lab_day, x='session_num', y='acc', errorbar=('se'), ax=ax[0,0])
-plt.tight_layout()
-plt.show()
+drop_subs = [134, 213, 268, 358, 482]
+d_cost = d_cost[~((d_cost['session_num'] == 1) & (d_cost['subject_id'].isin(drop_subs)))]
 
-# LAB: Plot cost (pre - post)
-# Cost 25 trials prior to probe (block 21) vs 25 trials post probe (block 22)
-pre_90 = dd_lab[(dd_lab['block']==21) &
-                (dd_lab['probe_condition']==90)].groupby('session_num')['acc'].mean()
-post_90 = dd_lab[dd_lab['block']==22 &
-                 (dd_lab['probe_condition']==90)].groupby('session_num')['acc'].mean()
+pre_block = d_cost.loc[d_cost["phase"] == "train", "block"].max()
+post_block = d_cost.loc[d_cost["phase"] == "test", "block"].min()
 
-pre_180 = dd_lab[(dd_lab['block']==21) &
-                 (dd_lab['probe_condition']==180)].groupby('session_num')['acc'].mean()
-post_180 = dd_lab[dd_lab['block']==22 &
-                  (dd_lab['probe_condition']==180)].groupby('session_num')['acc'].mean()
+pre_90 = d_cost[(d_cost["block"] == pre_block) &
+                 (d_cost["probe_condition"] == 90)].groupby("session_num")["acc"].mean()
+post_90 = d_cost[(d_cost["block"] == post_block) &
+                  (d_cost["probe_condition"] == 90)].groupby("session_num")["acc"].mean()
+
+pre_180 = d_cost[(d_cost["block"] == pre_block) &
+                  (d_cost["probe_condition"] == 180)].groupby("session_num")["acc"].mean()
+post_180 = d_cost[(d_cost["block"] == post_block) &
+                   (d_cost["probe_condition"] == 180)].groupby("session_num")["acc"].mean()
 
 cost_90 = pre_90 - post_90
 cost_180 = pre_180 - post_180
 
-cost_total = pd.concat([cost_90.rename('cost_90'), cost_180.rename('cost_180')], axis=1)
+cost = pd.concat(
+    [cost_90.rename("cost").reset_index().assign(probe_condition="90"),
+     cost_180.rename("cost").reset_index().assign(probe_condition="180")],
+     ignore_index=True)
 
-# wide -> long for seaborn
-cost_total = cost_total.rename_axis("session_num").reset_index()
-
-cost_plot = cost_total.melt(
-    id_vars='session_num',
-    value_vars=['cost_90', 'cost_180'],
-    var_name='probe_condition',
-    value_name='cost'
-)
-
-cost_plot["probe_condition"] = cost_plot["probe_condition"].map(
-    {"cost_90": "90", "cost_180": "180"}
-)
-
-days_lab = sorted(cost_plot["session_num"].unique())
-
-fig, axes = plt.subplots(1, len(days_lab), figsize=(3.5 * len(days_lab), 3.5), sharey=True)
-
-# handle case len(days_lab)==1
-if len(days_lab) == 1:
-    axes = [axes]
-
-for ax, day in zip(axes, days_lab):
-    dday = cost_plot[cost_plot["session_num"] == day]
-
-    sns.barplot(
-        data=dday,
-        x="probe_condition",
-        y="cost",
-        ax=ax,
-        errorbar=None,   # one value per bar here (since you averaged already)
-    )
-    ax.set_title(f"Session {day}")
-    ax.set_xlabel("Probe")
-    ax.set_ylim(bottom=0)
-
-axes[0].set_ylabel("Cost (Block 21 - Block 22)")
-for ax in axes[1:]:
-    ax.set_ylabel("")
-
+# plot
+fig, ax = plt.subplots(1, 1, squeeze = False)
+sns.barplot(data=cost, x='session_num', y='cost', hue='probe_condition', ax=ax[0,0])
 plt.tight_layout()
 plt.show()
 
+### HOW MATT WOULD DO IT (JUST THE PANDAS VERSION OF THE DATA.TABLE APPROACH IN 2020)
+d_cost = d_lab_all.copy() 
+d_cost = d_cost[~((d_cost['session_num'] == 1) & (d_cost['subject_id'].isin(drop_subs)))]
+
+d = d_cost[d_cost['block'] > 17] # equating number of train and test blocks for fair compare
+dd = d.groupby(['subject_id', 'session_num', 'phase',
+                           'probe_condition'])['acc'].mean().reset_index()
+
+dd_wide = (
+  dd.pivot_table(
+      index=["subject_id", "session_num", "probe_condition"],
+      columns="phase",
+      values="acc",
+      aggfunc="mean"
+  )
+  .reset_index()
+)
+
+dd_wide['diff_score'] = dd_wide['train'] - dd_wide['test']
+
+dd_wide['probe_condition'] = dd_wide['probe_condition'].astype('category')
+dd_wide['subject_id'] = dd_wide['subject_id'].astype('category')
+
+sns.set_palette('rocket', 2)
+
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
+sns.pointplot(data=dd_wide,
+              x = 'session_num',
+              y = 'diff_score',
+              hue = 'probe_condition',
+              linestyle='none',
+              dodge=True
+)
+plt.show()
+
+fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(10, 5))
+sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 90],
+             x = 'session_num',
+             y = 'diff_score',
+             hue = 'subject_id',
+             ax=ax[0, 0]
+)
+sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 180],
+             x = 'session_num',
+             y = 'diff_score',
+             hue = 'subject_id',
+             ax=ax[0, 1]
+)
+sns.move_legend(ax[0, 0], "upper left", bbox_to_anchor=(1, 1))
+sns.move_legend(ax[0, 1], "upper left", bbox_to_anchor=(1, 1))
+plt.tight_layout()
+plt.show()
