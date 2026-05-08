@@ -37,7 +37,7 @@ for fd in os.listdir(dir_data_lab):
                 # in session 4, ActiView had a syncing error and crached 30
                 # trials in with participant 875, restarted experiment clean --
                 # removing extra data file
-                if fs not in ['sub_875_sess_001_part_001_date_2026_04_03_data.csv',
+                if fs not in ['sub_875_sess_001_part_001_date_2026_04_03_data (1).csv',
                               'sub_875_sess_001_part_002_date_2026_04_03_data.csv',
                               'sub_875_sess_004_part_001_date_2026_04_24_data (1).csv'
                               ]:
@@ -97,7 +97,7 @@ dd_home = dd_home.drop(columns=['value_left', 'size_left', 'value_right',
 # 300 trials -- train + numerical stroop
 d_dt = d_home.sort_values(['subject_id', 'session_num', 'session_part',
                              'trial']).reset_index(drop=True)
-d_dt = d_dt[d_dt['session_num'] < 15]
+d_dt = d_dt[(d_dt['session_num'] == 16) | (d_dt['session_num'] == 17)]
 
 d_dt['acc'] = (d_dt['cat'] == d_dt['resp']).astype(int)
 d_dt['trial'] = d_dt.groupby(['subject_id', 'session_num']).cumcount()
@@ -114,8 +114,6 @@ below_exp = dd_lab_pd_avg[(dd_lab_pd_avg['acc'] < 0.75) & (dd_lab_pd_avg['sessio
 
 # -- HOME -- 
 dd_home_pd_avg = dd_home.groupby(['subject_id', 'session_num'])['acc'].mean().reset_index()
-
-dd_home[(dd_home['session_num'] == 1) & (dd_home['block'] > 12)]
 
 # participants 2, 189, and 639 have below 70% accuracy by the end of lab day 2
 # (after 6 sessions) -- at-home data shows that they are not breaking 80% at
@@ -218,6 +216,8 @@ plt.show()
 
 # -- DUAL TASK --
 # average accuracy in task
+d_dt_acc['subject_id'] = d_dt_acc['subject_id'].astype('category')
+    
 fig, ax = plt.subplots(1, 1, squeeze = False)
 sns.pointplot(data=d_dt_acc,
               x='session_num',
@@ -227,9 +227,6 @@ sns.pointplot(data=d_dt_acc,
 plt.tight_layout()
 plt.show()
 
-# average accuracy compared to last at home day and last lab day
-
-
 # -- 90 vs 180 COST -- 
 # take participants 134, 213, 268, 358, and 482 session 1 out of d as they
 # completed 650 trials of train, no test trials were completed
@@ -237,6 +234,10 @@ d_cost = dd_lab_all.copy()
 
 drop_subs = [134, 213, 268, 358, 482]
 d_cost = d_cost[~((d_cost['session_num'] == 1) & (d_cost['subject_id'].isin(drop_subs)))]
+
+# dropping non-learners
+drop_subs_exc = [2, 189, 639]
+d_cost = d_cost[~((d_cost['subject_id'].isin(drop_subs_exc)))]
 
 pre_block = d_cost.loc[d_cost['phase'] == 'train', 'block'].max()
 post_block = d_cost.loc[d_cost['phase'] == 'test', 'block'].min()
@@ -270,6 +271,10 @@ d_cost = dd_lab_all.copy()
 
 drop_subs = [134, 213, 268, 358, 482]
 d_cost = d_cost[~((d_cost['session_num'] == 1) & (d_cost['subject_id'].isin(drop_subs)))]
+
+# dropping non-learners
+drop_subs_exc = [2, 189, 639]
+d_cost = d_cost[~((d_cost['subject_id'].isin(drop_subs_exc)))]
 
 d = d_cost[d_cost['block'] > 17] # equating number of train and test blocks for fair compare
 dd = d.groupby(['subject_id', 'session_num', 'phase',
@@ -318,4 +323,5 @@ sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 180],
 sns.move_legend(ax[0, 0], 'upper left', bbox_to_anchor=(1, 1))
 sns.move_legend(ax[0, 1], 'upper left', bbox_to_anchor=(1, 1))
 plt.tight_layout()
-plt.show()
+barplotplt.show()
+plt.savefig('90vs180.png')
