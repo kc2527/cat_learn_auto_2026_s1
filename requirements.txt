@@ -1,0 +1,9 @@
+mne
+numpy
+pingouin
+scipy
+matplotlib
+pandas
+neurokit2
+mne-icalabel
+ipympl
