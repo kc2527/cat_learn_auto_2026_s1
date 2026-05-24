@@ -12,6 +12,8 @@ df_lab_rec = []
 df_train_rec = []
 df_dt_rec = []
 
+sns.set_palette('rocket', 2)
+
 for fd in os.listdir(dir_data_lab):
     if fd in exclude_subs:
         continue
@@ -149,7 +151,7 @@ dd_all = d_all.groupby(['subject_id', 'session_num',
 # NOTE: Figure --- all session types
 fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 8))
 sns.pointplot(data=dd_all, x='session_num', y='acc_plot', hue='session_type', errorbar=('se'), ax=ax[0, 0])
-[x.set_xticks(np.arange(0, dd_all['day'].max(), 1)) for x in ax.flatten()]
+[x.set_xticks(np.arange(0, dd_all['session_num'].max(), 1)) for x in ax.flatten()]
 ax[0 ,0].set_title('Mean Accuracy Across Days per Session Type', fontsize=16)
 ax[0, 0].set_xlabel('Day')
 ax[0, 0].set_ylabel('Accuracy (Proportion Correct)')
@@ -190,4 +192,62 @@ plt.show()
 # plt.savefig('../figures/dual_task_performance_acc.png', dpi=300)
 # plt.close()
 
+# NOTE: calculating and plotting cost
+d_cost = d_all.copy() 
 
+drop_subs = [134, 213, 268, 358, 482]
+d_cost = d_cost[~((d_cost['session_num'] == 1) & (d_cost['subject_id'].isin(drop_subs)))]
+
+# dropping non-learners
+drop_subs_exc = [2, 189, 639]
+d_cost = d_cost[~((d_cost['subject_id'].isin(drop_subs_exc)))]
+
+d = d_cost[d_cost['block'] > 17] # equating number of train and test blocks for fair compare
+dd = d.groupby(['subject_id', 'session_num', 'phase',
+                           'probe_condition'])['acc'].mean().reset_index()
+
+dd_wide = (
+  dd.pivot_table(
+      index=['subject_id', 'session_num', 'probe_condition'],
+      columns='phase',
+      values='acc',
+      aggfunc='mean'
+  )
+  .reset_index()
+)
+
+dd_wide['diff_score'] = dd_wide['train'] - dd_wide['test']
+
+dd_wide['probe_condition'] = dd_wide['probe_condition'].astype('category')
+dd_wide['subject_id'] = dd_wide['subject_id'].astype('category')
+
+
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
+sns.pointplot(data=dd_wide,
+              x = 'session_num',
+              y = 'diff_score',
+              hue = 'probe_condition',
+              errorbar='se',
+              linestyle='none',
+              dodge=True
+)
+plt.show()
+
+fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(10, 5))
+sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 90],
+             x = 'session_num',
+             y = 'diff_score',
+             hue = 'subject_id',
+             ax=ax[0, 0]
+)
+sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 180],
+             x = 'session_num',
+             y = 'diff_score',
+             hue = 'subject_id',
+             ax=ax[0, 1]
+)
+sns.move_legend(ax[0, 0], 'upper left', bbox_to_anchor=(1, 1))
+sns.move_legend(ax[0, 1], 'upper left', bbox_to_anchor=(1, 1))
+plt.tight_layout()
+plt.show()
+plt.savefig('90vs180.png')

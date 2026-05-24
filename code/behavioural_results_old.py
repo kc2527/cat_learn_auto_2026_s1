@@ -297,6 +297,18 @@ sns.barplot(data=cost, x='session_num', y='cost', hue='probe_condition', ax=ax[0
 plt.tight_layout()
 plt.show()
 
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
+sns.pointplot(data= cost,
+              x = 'session_num',
+              y = 'cost',
+              hue = 'probe_condition',
+              errorbar='se',
+              linestyle='none',
+              dodge=True
+)
+plt.show()
+
+
 ### HOW MATT WOULD DO IT (JUST THE PANDAS VERSION OF THE DATA.TABLE APPROACH IN 2020)
 d_cost = dd_lab_all.copy() 
 
@@ -310,6 +322,30 @@ d_cost = d_cost[~((d_cost['subject_id'].isin(drop_subs_exc)))]
 d = d_cost[d_cost['block'] > 17] # equating number of train and test blocks for fair compare
 dd = d.groupby(['subject_id', 'session_num', 'phase',
                            'probe_condition'])['acc'].mean().reset_index()
+
+d_multi = d.copy()
+
+fig, ax = plt.subplots(1, len(days_lab), squeeze=False, figsize=(8,6), sharey=True)
+for a, day in zip(ax.flat, days_lab):
+      sns.lineplot(
+          data=d_multi[d_multi['session_num'] == day],
+          x='block',
+          y='acc',
+          hue='probe_condition',
+          legend=False,
+          errorbar=None,
+          ax=a
+      )
+      a.set_title(f'Day {day}')
+      a.set_ylim(0.5, 1)
+      a.vlines(data=d_multi[d_multi['session_num'] == day],
+                 x=11,
+                 ymin=0.5,
+                 ymax=1,
+                 linestyle='--')
+plt.legend()
+plt.tight_layout()
+plt.show()
 
 dd_wide = (
   dd.pivot_table(
