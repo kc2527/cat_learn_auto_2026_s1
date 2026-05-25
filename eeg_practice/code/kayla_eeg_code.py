@@ -13,7 +13,7 @@ import mne_icalabel
 
 # NOTE: load and downsample data
 # prep for file
-dir_data_eeg = '/Users/kayla/Desktop/KC/university/2026/projects/cat_learn_auto_2026_s1/eeg/eeg_data'
+dir_data_eeg = '/Users/kayla/Desktop/KC/university/2026/projects/cat_learn_auto_2026_s1/eeg_practice/eeg_data'
 f = os.path.join(dir_data_eeg, 'P268_eeg_5.bdf')
 
 # event dict
@@ -207,6 +207,10 @@ raw.plot(
 epochs = mne.Epochs(raw, events, tmin=-0.2, tmax=1, baseline=(-0.2, 0),
                     event_id=event_dict, detrend=0, reject=None,
                     reject_by_annotation=None,  preload=True)
+
+# stim onset A train = 20
+mne.Epochs(raw, events, event_id={"20": 20, "21": 21}, tmin=-0.2, tmax=1.0,
+           baseline=(-0.2, 0), preload=True).average().plot()
 
 stim_A_train = epochs["STIM_ONSET_A_TRAIN"]
 stim_B_train = epochs["STIM_ONSET_B_TRAIN"]
