@@ -15,8 +15,6 @@ df_dt_rec = []
 sns.set_palette('rocket', 2)
 
 for fd in os.listdir(dir_data_lab):
-    if fd in exclude_subs:
-        continue
     dir_data_lab_fd = os.path.join(dir_data_lab, fd)
     if os.path.isdir(dir_data_lab_fd):
         for fs in os.listdir(dir_data_lab_fd):
@@ -62,7 +60,7 @@ d_dt = pd.concat(df_dt_rec, ignore_index=True)
 
 # NOTE: is this too much work? i don't want to just remove them because of my
 # muck up *sad face* 
-# in session 1, sub_875 completed 10 trian trials and 50 probe trials (part 1),
+# in session 1, sub_875 completed 10 train trials and 50 probe trials (part 1),
 # then completed 540 train and 100 probe (part 2) -- adding 10 train trials from
 # part 1 to part 2
 f1 = 'sub_875_sess_001_part_001_date_2026_04_03_data (1).csv'
@@ -76,7 +74,7 @@ p875 = pd.concat([p1_875[p1_875["phase"] == "train"].head(10), p2_875], ignore_i
 d_lab = d_lab[(d_lab["f_name"] != f1) & (d_lab["f_name"] != f2)]
 d_lab = pd.concat([d_lab, p875], ignore_index=True)
 
-block_size = 25
+block_size = 50
 
 d_lab = d_lab.sort_values(['subject_id', 'session_num', 'session_part',
                              'trial']).reset_index(drop=True)
@@ -150,7 +148,8 @@ dd_all = d_all.groupby(['subject_id', 'session_num',
 
 # NOTE: Figure --- all session types
 fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 8))
-sns.pointplot(data=dd_all, x='session_num', y='acc_plot', hue='session_type', errorbar=('se'), ax=ax[0, 0])
+sns.pointplot(data=dd_all, x='session_num', y='acc_plot', hue='session_type',
+              errorbar=('se'), ax=ax[0, 0])
 [x.set_xticks(np.arange(0, dd_all['session_num'].max(), 1)) for x in ax.flatten()]
 ax[0 ,0].set_title('Mean Accuracy Across Days per Session Type', fontsize=16)
 ax[0, 0].set_xlabel('Day')
@@ -159,6 +158,16 @@ ax[0, 0].legend(title='Session Type', loc='lower right')
 plt.show()
 #plt.savefig('../figures/training_performance_days.png', dpi=300)
 #plt.close()
+
+# NOTE: Figure -- accuracy across all lab days (blocks)
+d_lab_all = d_all[d_all['session_type'] == 'Lab'].copy()
+d_lab_all['block_cont'] = ((d_lab_all['session_num'] - 1) * 26) + d_lab_all['block'] + 1
+
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8,8))
+sns.pointplot(data=d_lab_all, x='block_cont', y='acc', hue='probe_condition',
+              errorbar='se', ax=ax[0,0])
+plt.tight_layout()
+plt.show()
 
 # NOTE: Figure -- comparing last at home day and last lab day to dual-task day
 d_dtf = dd_all[dd_all['session_num'].isin([20, 21, 22])].copy()
