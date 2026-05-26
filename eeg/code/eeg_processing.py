@@ -171,6 +171,11 @@ for fpath in file_paths:
     # NOTE: highpass filter
     raw.filter(l_freq=0.1, h_freq=None)
 
+    # NOTE: find bridged channels and save to output file
+    raw_bridge = raw.copy().pick("eeg")
+    bridged_idx, ed_matrix = mne.preprocessing.compute_bridged_electrodes(raw_bridge)
+    bridged_pairs = [(raw_bridge.ch_names[i], raw_bridge.ch_names[j]) for i, j in bridged_idx]
+
     # NOTE: handle bad channels and interpolate
     raw.info["bads"] = []
     convert = dict(zip(raw_scalp_channels, biosemi64_channels))
@@ -196,17 +201,8 @@ for fpath in file_paths:
     # add known bads to bads from calculations
     raw.info["bads"] = list(set(raw.info["bads"]).union(convert_bads))
 
-    # log bad channels for this file and append to list for file log
-    log_processes.append({
-        "participant": participant,
-        "session": session,
-        "task": task,
-        "file_name": fname,
-        "manual_bads_raw": ",".join(known_bads),
-        "manual_bads_montage": ",".join(convert_bads),
-        "calculated_bads": ",".join(bads.tolist()),
-        "final_bads_used": ",".join(raw.info["bads"])
-    })
+    # creating copy of bads for log before they get wiped by interpolate
+    log_bads = raw.info['bads'].copy()
 
     # interpolate
     raw.interpolate_bads(reset_bads=True)
@@ -223,10 +219,26 @@ for fpath in file_paths:
     ica.exclude = []                # Could set these manually
     eog_indices, eog_scores = ica.find_bads_eog(filt_raw)
     ica.exclude = eog_indices
-    log_processes[-1]["ica_component_count"] = len(eog_indices)
 
     # now remove components
     ica.apply(raw)
+
+    # NOTE: log bad channels, ICA components, and bridged channels for this file
+    # and append to list for file log
+    log_processes.append({
+        "participant": participant,
+        "session": session,
+        "task": task,
+        "file_name": fname,
+        "manual_bads_raw": ",".join(known_bads),
+        "manual_bads_montage": ",".join(convert_bads),
+        "calculated_bads": ",".join(bads.tolist()),
+        "final_bads_used": ",".join(log_bads),
+        "ica_components_excluded": ",".join(map(str, eog_indices)),
+        "ica_component_count": len(eog_indices),
+        "bridged_pairs": ";".join([f"{a}-{b}" for a, b in bridged_pairs]),
+        "n_bridged_pairs": len(bridged_pairs)
+    })
 
     # get rid of EOG
     raw.pick(picks = ['eeg'])
