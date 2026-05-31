@@ -28,13 +28,14 @@ def fit_dbm(d, model_func, side, k, n, model_name):
     mutation = fit_args["mutation"]
     recombination = fit_args["recombination"]
 
-    sub = d["subject_id"].iloc[0]
-    session_num = d["session_num"].iloc[0]
+    # sub = d["subject_id"].iloc[0]
+    # session_num = d["session_num"].iloc[0]
 
     drec = []
     for m, mod in enumerate(model_func):
-        dd = d[(d["subject_id"] == sub)
-               & (d["session_num"] == session_num)][["cat", "x", "y", "resp"]]
+        dd = d[["cat", "x", "y", "resp"]].copy()
+        # dd = d[(d["subject_id"] == sub)
+        #        & (d["session_num"] == session_num)][["cat", "x", "y", "resp"]]
 
         cat = dd.cat.to_numpy()
         x = dd.x.to_numpy()
@@ -97,10 +98,10 @@ def fit_dbm(d, model_func, side, k, n, model_name):
         a2 = np.sqrt(1 - a1**2)
         b = results['x'][1]
 
-        print(d[["subject_id", "session_num"]].iloc[0])
-        print(model_name[m], results["x"], results["fun"])
-        print(a1, a2, b)
-        print(np.unique(resp))
+        # print(d[["subject_id", "session_num"]].iloc[0])
+        # print(model_name[m], results["x"], results["fun"])
+        # print(a1, a2, b)
+        # print(np.unique(resp))
 
         # fig, ax = plt.subplots(1, 1, squeeze=False)
         # ax[0, 0].scatter(x, y, c=resp)
