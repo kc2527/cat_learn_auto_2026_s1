@@ -6,14 +6,14 @@ def fit_dbm(d, model_func, side, k, n, model_name):
         "obj_func": None,
         "bounds": None,
         "disp": False,
-        "maxiter": 3000,
-        "popsize": 20,
+        "maxiter": 250,
+        "popsize": 10,
         "mutation": 0.7,
         "recombination": 0.5,
         "tol": 1e-3,
         "polish": False,
         "updating": "deferred",
-        "workers": -1,
+        "workers": 6,
     }
 
     obj_func = fit_args["obj_func"]
