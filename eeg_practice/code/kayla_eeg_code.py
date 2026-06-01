@@ -126,6 +126,27 @@ raw.set_montage(mne.channels.make_standard_montage("biosemi64"), on_missing="ign
 # NOTE: highpass filter
 raw.filter(l_freq=0.1, h_freq=None)
 
+# NOTE: looking for bridged channels
+# after set_montage(...), before bad-channel interpolation
+raw_bridge = raw.copy().pick("eeg")
+
+bridged_idx, ed_matrix = mne.preprocessing.compute_bridged_electrodes(raw_bridge)
+
+# readable channel-name pairs
+bridged_pairs = [(raw_bridge.ch_names[i], raw_bridge.ch_names[j]) for i, j in bridged_idx]
+print("Bridged pairs:", bridged_pairs)
+
+# optional quick visual
+mne.viz.plot_bridged_electrodes(raw_bridge.info, bridged_idx, ed_matrix)
+
+mne.viz.plot_bridged_electrodes(
+    raw.info,
+    bridged_idx,
+    ed_matrix,
+    title="Subject P268 Bridged Electrodes",
+    topomap_args=dict(vlim=(None, 5)),
+)
+
 # NOTE: handle bad channels and interpolate
 raw.info["bads"] = []
 convert = dict(zip(raw_scalp_channels, biosemi64_channels))
