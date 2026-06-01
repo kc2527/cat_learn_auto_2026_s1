@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import sys
+from util_func_dbm import *
 
 dir_data = '../at_home_data'
 dir_data_lab = '../behavioural_data'
@@ -13,6 +14,8 @@ df_train_rec = []
 df_dt_rec = []
 
 sns.set_palette('rocket', 2)
+
+exclude_subs = {}
 
 for fd in os.listdir(dir_data_lab):
     dir_data_lab_fd = os.path.join(dir_data_lab, fd)
@@ -28,6 +31,14 @@ for fd in os.listdir(dir_data_lab):
                               ]:
 
                     df = pd.read_csv(f_full_path)
+
+                    # subject 594 missed lab day 4 due to illness, made up
+                    # session at home under id 444, changing id to 594 and
+                    # session_num to 4
+                    if fs == 'sub_444_sess_001_part_001_date_2026_05_24_data.csv':
+                        df['subject_id'] = 594
+                        df['session_num'] = 4
+
                     df['f_name'] = fs
                     df_lab_rec.append(df)
 
@@ -58,23 +69,22 @@ d_lab = pd.concat(df_lab_rec, ignore_index=True)
 d_home = pd.concat(df_train_rec, ignore_index=True)
 d_dt = pd.concat(df_dt_rec, ignore_index=True)
 
-# NOTE: is this too much work? i don't want to just remove them because of my
-# muck up *sad face* 
 # in session 1, sub_875 completed 10 train trials and 50 probe trials (part 1),
 # then completed 540 train and 100 probe (part 2) -- adding 10 train trials from
 # part 1 to part 2
 f1 = 'sub_875_sess_001_part_001_date_2026_04_03_data (1).csv'
 f2 = 'sub_875_sess_001_part_002_date_2026_04_03_data.csv'
 
-p1_875 = d_lab[d_lab["f_name"] == f1]
-p2_875 = d_lab[d_lab["f_name"] == f2]
+p1_875 = d_lab[d_lab['f_name'] == f1]
+p2_875 = d_lab[d_lab['f_name'] == f2]
 
-p875 = pd.concat([p1_875[p1_875["phase"] == "train"].head(10), p2_875], ignore_index=True)
+p875 = pd.concat([p1_875[p1_875['phase'] == 'train'].head(10), p2_875], ignore_index=True)
 
-d_lab = d_lab[(d_lab["f_name"] != f1) & (d_lab["f_name"] != f2)]
+d_lab = d_lab[(d_lab['f_name'] != f1) & (d_lab['f_name'] != f2)]
 d_lab = pd.concat([d_lab, p875], ignore_index=True)
 
-block_size = 50
+# NOTE: create dfs
+block_size = 25
 
 d_lab = d_lab.sort_values(['subject_id', 'session_num', 'session_part',
                              'trial']).reset_index(drop=True)
@@ -137,8 +147,126 @@ d_all['acc_stroop_mean'] = d_all.groupby('subject_id')['acc_stroop'].transform(l
 d_all = d_all[d_all.groupby('subject_id')['acc_stroop_mean'].transform('max').ge(0.8)
               ].reset_index(drop=True) 
 
+# NOTE: add congruency column to d_all -- only for 90 condition
+congruent = (
+    ((d_all['y'] > d_all['x']) & (d_all['y'] < (-d_all['x'] + 100))) |
+    ((d_all['y'] < d_all['x']) & (d_all['y'] > (-d_all['x'] + 100)))
+)
+
+incongruent = (
+    ((d_all['y'] > d_all['x']) & (d_all['y'] > (-d_all['x'] + 100))) |
+    ((d_all['y'] < d_all['x']) & (d_all['y'] < (-d_all['x'] + 100)))
+)
+
+d_all['congruency'] = np.select([(d_all['probe_condition'] == 90) & congruent,
+                                 (d_all['probe_condition'] == 90) & incongruent],
+                                ['congruent', 'incongruent'],
+                                default=pd.NA)
+
+# # NOTE: dbm fits
+# models = [
+#     nll_unix,
+#     nll_unix,
+#     nll_uniy,
+#     nll_uniy,
+#     nll_glc,
+#     nll_glc,
+# ]
+# 
+# side = [0, 1, 0, 1, 0, 1, 0, 1, 2, 3]
+# k = [2, 2, 2, 2, 3, 3, 3, 3, 3, 3]
+# n = block_size
+# 
+# model_names = [
+#     'nll_unix_0',
+#     'nll_unix_1',
+#     'nll_uniy_0',
+#     'nll_uniy_1',
+#     'nll_glc_0',
+#     'nll_glc_1',
+# ]
+# 
+# d_lab_dbm = d_all[d_all['session_type'] == 'Lab'].copy()
+# d_lab_train_dbm = d_lab_dbm[d_lab_dbm['phase'] == 'train'].copy()
+# d_lab_test_dbm = d_lab_dbm[d_lab_dbm['phase'] == 'test'].copy()
+# 
+# # make sure output dir exists
+# os.makedirs('../dbm_fits', exist_ok=True)
+# 
+# # save one combined DBM fit file for both phases
+# dbm_path = '../dbm_fits/dbm_results_lab_train_test.csv'
+# 
+# # fitting 2 dbms per participant -- one on train, the other on test
+# if not os.path.exists(dbm_path):
+#     # fit train phase
+#     dbm_train = (
+#         d_lab_train_dbm
+#         .groupby(['subject_id', 'session_num'])
+#         .apply(fit_dbm, models, side, k, block_size, model_names)
+#         .reset_index()
+#     )
+# 
+#     # fit test phase
+#     dbm_test = (
+#         d_lab_test_dbm
+#         .groupby(['subject_id', 'session_num'])
+#         .apply(fit_dbm, models, side, k, block_size, model_names)
+#         .reset_index()
+#     )
+# 
+#     dbm_train['phase_dbm'] = 'train'
+#     dbm_test['phase_dbm'] = 'test'
+# 
+#     # combine long-format rows: one row per model fit per subject/session/phase
+#     dbm = pd.concat([dbm_train, dbm_test], ignore_index=True)
+#     dbm.to_csv(dbm_path, index=False)
+# 
+# else:
+#     dbm = pd.read_csv(dbm_path)
+#     dbm = dbm[['subject_id', 'session_num', 'phase_dbm', 'model', 'bic', 'p']]
+# 
+# def assign_best_model(x):
+#     model = x['model'].to_numpy()
+#     bic = x['bic'].to_numpy()
+#     best_model = np.unique(model[bic == bic.min()])[0]
+#     x['best_model'] = best_model
+#     return x
+# 
+# dbm = dbm.groupby(['subject_id', 'session_num', 'phase_dbm']).apply(assign_best_model, include_groups=False).reset_index()
+# dbm = dbm[dbm['model'] == dbm['best_model']]
+# dbm = dbm[['subject_id', 'session_num', 'phase_dbm', 'bic', 'best_model']].drop_duplicates().reset_index(drop=True)
+# dbm['best_model_class'] = dbm['best_model'].str.split('_').str[1]
+# dbm.loc[dbm['best_model_class'] != 'glc', 'best_model_class'] = 'rule-based'
+# dbm.loc[dbm['best_model_class'] == 'glc', 'best_model_class'] = 'procedural'
+# dbm['best_model_class'] = dbm['best_model_class'].astype('category') 
+# 
+# # print proportion of best model classes across all subjects and days
+# dbm.groupby('session_num')['best_model_class'].value_counts(normalize=True)
+# 
+# # NOTE: plot bic across days for each model class
+# fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(14, 6), sharey=True)
+# 
+# for i, phase_name in enumerate(['train', 'test']):
+#     dplot = dbm[dbm['phase_dbm'] == phase_name].copy()
+#     sns.pointplot(
+#         data=dplot,
+#         x='session_num',
+#         y='bic',
+#         hue='best_model_class',
+#         errorbar=('se'),
+#         ax=ax[0, i]
+#     )
+#     ax[0, i].set_title(f'{phase_name.capitalize()} Phase')
+#     ax[0, i].set_xlabel('Session')
+#     ax[0, i].set_ylabel('BIC' if i == 0 else '')
+#     ax[0, i].legend(title='Model Class')
+# 
+# plt.tight_layout()
+# plt.show()
+# # plt.savefig('../figures/dbm_bic_performance_lab_train_test.png', dpi=300)
+
 # NOTE: aggregate data for upcoming figures -- make new acc column for plot
-# excluding probe trials on lab days
+# created new column for plotting accuracy for all days (excluding probe trials)
 d_all['acc_plot'] = d_all['acc']
 lab_test = (d_all['session_type'] == 'Lab') & (d_all['phase'] != 'train')
 d_all.loc[lab_test, 'acc_plot'] = np.nan
@@ -170,6 +298,7 @@ plt.tight_layout()
 plt.show()
 
 # NOTE: Figure -- comparing last at home day and last lab day to dual-task day
+# using dd_all from above 
 d_dtf = dd_all[dd_all['session_num'].isin([20, 21, 22])].copy()
 
 # change the day column to categorical for plotting with names "Last Training Day" and "Dual-Task Day"
@@ -201,21 +330,23 @@ plt.show()
 # plt.savefig('../figures/dual_task_performance_acc.png', dpi=300)
 # plt.close()
 
-# NOTE: calculating and plotting cost
+# NOTE: calculating + plotting cost for accuracy and reaction time
 d_cost = d_all.copy() 
 
 drop_subs = [134, 213, 268, 358, 482]
 d_cost = d_cost[~((d_cost['session_num'] == 1) & (d_cost['subject_id'].isin(drop_subs)))]
 
 # dropping non-learners
-drop_subs_exc = [2, 189, 639]
+# TODO: dropping 943 for the moment because something is weird (has days 3, 10, 15, 20)
+drop_subs_exc = [2, 189, 639, 943]
 d_cost = d_cost[~((d_cost['subject_id'].isin(drop_subs_exc)))]
 
 d = d_cost[d_cost['block'] > 17] # equating number of train and test blocks for fair compare
 dd = d.groupby(['subject_id', 'session_num', 'phase',
-                           'probe_condition'])['acc'].mean().reset_index()
+                           'probe_condition'])[['acc', 'rt']].mean().reset_index()
 
-dd_wide = (
+# accuracy
+dd_wide_acc = (
   dd.pivot_table(
       index=['subject_id', 'session_num', 'probe_condition'],
       columns='phase',
@@ -225,23 +356,51 @@ dd_wide = (
   .reset_index()
 )
 
-dd_wide['diff_score'] = dd_wide['train'] - dd_wide['test']
+dd_wide_acc['diff_score'] = dd_wide_acc['train'] - dd_wide_acc['test']
+dd_wide_acc['probe_condition'] = dd_wide_acc['probe_condition'].astype('category')
+dd_wide_acc['subject_id'] = dd_wide_acc['subject_id'].astype('category')
 
-dd_wide['probe_condition'] = dd_wide['probe_condition'].astype('category')
-dd_wide['subject_id'] = dd_wide['subject_id'].astype('category')
-
-
+# plot accuracy cost
 fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
-sns.pointplot(data=dd_wide,
-              x = 'session_num',
-              y = 'diff_score',
-              hue = 'probe_condition',
+sns.pointplot(data=dd_wide_acc,
+              x='session_num',
+              y='diff_score',
+              hue='probe_condition',
               errorbar='se',
               linestyle='none',
               dodge=True
 )
 plt.show()
 
+# reaction times
+dd_wide_rt = (
+  dd.pivot_table(
+      index=['subject_id', 'session_num', 'probe_condition'],
+      columns='phase',
+      values='rt',
+      aggfunc='mean'
+  )
+  .reset_index()
+)
+
+# making it test - train to make +ve values
+dd_wide_rt['diff_score'] = dd_wide_rt['test'] - dd_wide_rt['train']
+dd_wide_rt['probe_condition'] = dd_wide_rt['probe_condition'].astype('category')
+dd_wide_rt['subject_id'] = dd_wide_rt['subject_id'].astype('category')
+
+# plot reaction time cost
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
+sns.pointplot(data=dd_wide_rt,
+              x='session_num',
+              y='diff_score',
+              hue='probe_condition',
+              errorbar='se',
+              linestyle='none',
+              dodge=True
+)
+plt.show()
+
+# plot accuracy cost for each subject 
 fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(10, 5))
 sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 90],
              x = 'session_num',
@@ -260,3 +419,102 @@ sns.move_legend(ax[0, 1], 'upper left', bbox_to_anchor=(1, 1))
 plt.tight_layout()
 plt.show()
 plt.savefig('90vs180.png')
+
+# NOTE: calculating + plotting conguency accurancy and reaction times (90 only)
+d_congruency = d_all.copy() 
+
+drop_subs = [134, 213, 268, 358, 482]
+d_congruency = d_congruency[~((d_congruency['session_num'] == 1) & (d_congruency['subject_id'].isin(drop_subs)))]
+
+# dropping non-learners
+# TODO: dropping 943 for the moment because something is weird (has days 3, 10, 15, 20)
+drop_subs_exc = [2, 189, 639, 943]
+d_congruency = d_congruency[~((d_congruency['subject_id'].isin(drop_subs_exc)))]
+
+d = d_congruency[d_congruency['block'] > 17] # equating number of train and test blocks for fair compare
+dd = d.groupby(['subject_id', 'session_num', 'phase', 'congruency',
+                           'probe_condition'])[['acc', 'rt']].mean().reset_index()
+
+# accuracy
+dd_wide_acc = (
+  dd.pivot_table(
+      index=['subject_id', 'session_num', 'probe_condition', 'congruency'],
+      columns='phase',
+      values='acc',
+      aggfunc='mean'
+  )
+  .reset_index()
+)
+
+dd_wide_acc['diff_score'] = dd_wide_acc['train'] - dd_wide_acc['test']
+dd_wide_acc['probe_condition'] = dd_wide_acc['probe_condition'].astype('category')
+dd_wide_acc['subject_id'] = dd_wide_acc['subject_id'].astype('category')
+
+# plot accuracy cost
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
+sns.pointplot(data=dd,
+              x='session_num',
+              y='acc',
+              hue='congruency',
+              errorbar='se',
+              linestyle='phase',
+              dodge=True
+)
+plt.show()
+
+sns.catplot(
+    data=dd,
+    kind="point",
+    x="session_num",
+    y="acc",
+    hue="congruency",     # congruent vs incongruent
+    col="phase",          # train vs test (separate panels)
+    errorbar=("se"),
+    dodge=True,
+    height=4,
+    aspect=1.2
+)
+plt.show()
+
+# reaction times
+dd_wide_rt = (
+  dd.pivot_table(
+      index=['subject_id', 'session_num', 'probe_condition', 'congruency'],
+      columns='phase',
+      values='rt',
+      aggfunc='mean'
+  )
+  .reset_index()
+)
+
+# making it test - train to make +ve values
+dd_wide_rt['diff_score'] = dd_wide_rt['test'] - dd_wide_rt['train']
+dd_wide_rt['probe_condition'] = dd_wide_rt['probe_condition'].astype('category')
+dd_wide_rt['subject_id'] = dd_wide_rt['subject_id'].astype('category')
+
+# plot reaction time cost
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
+sns.pointplot(data=dd_wide_rt,
+              x='session_num',
+              y='diff_score',
+              hue='probe_condition',
+              markers='congruency'
+              errorbar='se',
+              linestyle='none',
+              dodge=True
+)
+plt.show()
+
+sns.catplot(
+    data=dd,
+    kind="point",
+    x="session_num",
+    y="rt",
+    hue="congruency",     # congruent vs incongruent
+    col="phase",          # train vs test (separate panels)
+    errorbar=("se"),
+    dodge=True,
+    height=4,
+    aspect=1.2
+)
+plt.show()
