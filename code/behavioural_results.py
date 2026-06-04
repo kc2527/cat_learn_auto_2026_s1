@@ -1,4 +1,6 @@
 import numpy as np
+import scipy
+import pingouin
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -13,9 +15,7 @@ df_lab_rec = []
 df_train_rec = []
 df_dt_rec = []
 
-sns.set_palette('rocket', 2)
-
-exclude_subs = {}
+sns.set_palette('rocket')
 
 for fd in os.listdir(dir_data_lab):
     dir_data_lab_fd = os.path.join(dir_data_lab, fd)
@@ -39,13 +39,17 @@ for fd in os.listdir(dir_data_lab):
                         df['subject_id'] = 594
                         df['session_num'] = 4
 
+                    # subject 594 completed sessions across 2 lab computers
+                    # throughout the experiment so relabelling 'session 3' as
+                    # 'session 5'
+                    if fs == 'sub_594_sess_003_part_001_date_2026_05_29_data.csv':
+                        df['session_num'] = 5
+
                     df['f_name'] = fs
                     df_lab_rec.append(df)
 
 # not reading in cp task
 for fd in os.listdir(dir_data):
-    if fd in exclude_subs:
-        continue
     dir_data_fd = os.path.join(dir_data, fd)
     if os.path.isdir(dir_data_fd):
         for fs in os.listdir(dir_data_fd):
@@ -54,6 +58,12 @@ for fd in os.listdir(dir_data):
                 
                 df = pd.read_csv(f_full_path)
                 df['f_name'] = fs
+
+                # subject 943, sesssion 6 labelled as session 2 in .csv, unsure
+                # why -- correcting that here
+                if fs == 'sub_943_sess_006_part_001_date_2026_04_29_data.csv':
+                    df['session_num'] = 6
+
 
                 session = df['session_num'].unique()
 
@@ -271,20 +281,41 @@ d_all['acc_plot'] = d_all['acc']
 lab_test = (d_all['session_type'] == 'Lab') & (d_all['phase'] != 'train')
 d_all.loc[lab_test, 'acc_plot'] = np.nan
 
-dd_all = d_all.groupby(['subject_id', 'session_num',
-                        'session_type']).agg({'acc_plot': 'mean', 'rt': 'mean'}).reset_index()
+# created new column for plotting reaction times for all days (excluding probe trials)
+d_all['rt_plot'] = d_all['rt']
+lab_test = (d_all['session_type'] == 'Lab') & (d_all['phase'] != 'train')
+d_all.loc[lab_test, 'rt_plot'] = np.nan
 
-# NOTE: Figure --- all session types
+dd_all = d_all.groupby(['subject_id', 'session_num',
+                        'session_type']).agg({'acc_plot': 'mean', 'rt_plot': 'mean'}).reset_index()
+
+pal = sns.color_palette('rocket', 6)
+mid3 = pal[1:4]
+
+# NOTE: Figure --- accuracy across all session types
 fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 8))
 sns.pointplot(data=dd_all, x='session_num', y='acc_plot', hue='session_type',
-              errorbar=('se'), ax=ax[0, 0])
+              errorbar=('se'), palette=mid3, ax=ax[0, 0])
 [x.set_xticks(np.arange(0, dd_all['session_num'].max(), 1)) for x in ax.flatten()]
 ax[0 ,0].set_title('Mean Accuracy Across Days per Session Type', fontsize=16)
 ax[0, 0].set_xlabel('Day')
 ax[0, 0].set_ylabel('Accuracy (Proportion Correct)')
 ax[0, 0].legend(title='Session Type', loc='lower right')
 plt.show()
-#plt.savefig('../figures/training_performance_days.png', dpi=300)
+#plt.savefig('../figures/accuracy_across_days.png', dpi=300)
+#plt.close()
+
+# NOTE: Figure --- reaction time across all session types
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 8))
+sns.pointplot(data=dd_all, x='session_num', y='rt_plot', hue='session_type',
+              errorbar=('se'), palette=mid3, ax=ax[0, 0])
+[x.set_xticks(np.arange(0, dd_all['session_num'].max(), 1)) for x in ax.flatten()]
+ax[0 ,0].set_title('Mean Reaction Times Across Days per Session Type', fontsize=16)
+ax[0, 0].set_xlabel('Day')
+ax[0, 0].set_ylabel('Reaction Time (ms)')
+ax[0, 0].legend(title='Session Type', loc='lower left')
+plt.show()
+#plt.savefig('../figures/rts_across_days.png', dpi=300)
 #plt.close()
 
 # NOTE: Figure -- accuracy across all lab days (blocks)
@@ -293,7 +324,7 @@ d_lab_all['block_cont'] = ((d_lab_all['session_num'] - 1) * 26) + d_lab_all['blo
 
 fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8,8))
 sns.pointplot(data=d_lab_all, x='block_cont', y='acc', hue='probe_condition',
-              errorbar='se', ax=ax[0,0])
+              errorbar='se', scale=0.75, ax=ax[0,0])
 plt.tight_layout()
 plt.show()
 
@@ -301,7 +332,8 @@ plt.show()
 # using dd_all from above 
 d_dtf = dd_all[dd_all['session_num'].isin([20, 21, 22])].copy()
 
-# change the day column to categorical for plotting with names "Last Training Day" and "Dual-Task Day"
+# change the day column to categorical for plotting with names "Last Training
+# Day" and "Dual-Task Day"
 d_dtf['session_num'] = d_dtf['session_num'].map({20: 'Last Training Day', 21: 'Lab Day', 22: 'Dual-Task Day'})
 
 # plot point range plot comparing the last day of training and lab to dual-task day
@@ -318,27 +350,34 @@ plt.show()
 # plt.savefig('../figures/dual_task_performance.png', dpi=300)
 # plt.close()
 
-# plot point range plot comparing the last day of training and lab to dual-task day (acc only)
-fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(6, 6))
-sns.pointplot(data=d_dtf, x='session_num', y='acc_plot', errorbar=('se'), ax=ax[0, 0])
-ax[0, 0].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.2f}'.format(y)))
-ax[0, 0].set_xlabel('')
-ax[0, 0].set_ylabel('Accuracy (proportion correct)')
-ax[0, 0].set_title('Mean Accuracy: Last Training and Lab Day vs. Dual Task', fontsize=12)
-plt.tight_layout()
-plt.show()
-# plt.savefig('../figures/dual_task_performance_acc.png', dpi=300)
-# plt.close()
+# NOTE: Stats -- anova across all days: does accuracy improve across days?
+d_anova = d_all[~d_all['session_num'].isin(d_all[d_all['session_num']==22])]
 
-# NOTE: calculating + plotting cost for accuracy and reaction time
+res_anova = pg.rm_anova(data=d_anova,
+                        dv='acc_plot',
+                        within='session_num',
+                        subject='subject_id',
+                        correction=True)
+
+# NOTE: Stats -- dual-task: is there a difference in accuracy?
+res = pg.ttest(x=d_dtf[d_dtf['session_num'] == 'Last Training Day']['acc_plot'],
+               y=d_dtf[d_dtf['session_num'] == 'Dual-Task Day']['acc_plot'],
+               alternative='two-sided',
+               paired=True)
+
+res = pg.ttest(x=d_dtf[d_dtf['session_num'] == 'Lab']['acc_plot'],
+               y=d_dtf[d_dtf['session_num'] == 'Dual-Task Day']['acc_plot'],
+               alternative='two-sided',
+               paired=True)
+
+# NOTE: Figure -- calculating + plotting cost for accuracy and reaction time
 d_cost = d_all.copy() 
 
 drop_subs = [134, 213, 268, 358, 482]
 d_cost = d_cost[~((d_cost['session_num'] == 1) & (d_cost['subject_id'].isin(drop_subs)))]
 
 # dropping non-learners
-# TODO: dropping 943 for the moment because something is weird (has days 3, 10, 15, 20)
-drop_subs_exc = [2, 189, 639, 943]
+drop_subs_exc = [2, 189, 639]
 d_cost = d_cost[~((d_cost['subject_id'].isin(drop_subs_exc)))]
 
 d = d_cost[d_cost['block'] > 17] # equating number of train and test blocks for fair compare
@@ -420,15 +459,14 @@ plt.tight_layout()
 plt.show()
 plt.savefig('90vs180.png')
 
-# NOTE: calculating + plotting conguency accurancy and reaction times (90 only)
+# NOTE: Figure -- calculating + plotting conguency accurancy and reaction times (90 only)
 d_congruency = d_all.copy() 
 
 drop_subs = [134, 213, 268, 358, 482]
 d_congruency = d_congruency[~((d_congruency['session_num'] == 1) & (d_congruency['subject_id'].isin(drop_subs)))]
 
 # dropping non-learners
-# TODO: dropping 943 for the moment because something is weird (has days 3, 10, 15, 20)
-drop_subs_exc = [2, 189, 639, 943]
+drop_subs_exc = [2, 189, 639]
 d_congruency = d_congruency[~((d_congruency['subject_id'].isin(drop_subs_exc)))]
 
 d = d_congruency[d_congruency['block'] > 17] # equating number of train and test blocks for fair compare
