@@ -24,7 +24,7 @@ for fd in os.listdir(dir_data_lab):
             f_full_path = os.path.join(dir_data_lab_fd, fs)
             if os.path.isfile(f_full_path) and fs.endswith('.csv'):
 
-                # in session 4, ActiView had a syncing error and crached 30
+                # in session 4, ActiView had a syncing error and crashed 30
                 # trials in with participant 875, restarted experiment clean --
                 # removing extra data file
                 if fs not in ['sub_875_sess_004_part_001_date_2026_04_24_data (1).csv'
@@ -134,6 +134,9 @@ subs_to_keep = np.intersect1d(subs_to_keep, d_lab.subject_id.unique())
 # merge all dataframes inserting np.nan into columns that don't exist in a particular dataframe
 d_all = pd.concat([d_home, d_dt, d_lab], ignore_index=True, sort=False)
 d_all['session_num'] = d_all.groupby('subject_id')['session_num'].rank(method='dense').astype(int)
+
+d_lab[(d_lab['session_num']==12.5) &
+      (d_lab['phase']=='train')].groupby('subject_id')['acc'].mean()
 
 # NOTE: exclude subjects not in all three dataframes (i.e., who did not complete
 # the task correctly)
@@ -301,9 +304,9 @@ ax[0 ,0].set_title('Mean Accuracy Across Days per Session Type', fontsize=16)
 ax[0, 0].set_xlabel('Day')
 ax[0, 0].set_ylabel('Accuracy (Proportion Correct)')
 ax[0, 0].legend(title='Session Type', loc='lower right')
-plt.show()
-#plt.savefig('../figures/accuracy_across_days.png', dpi=300)
-#plt.close()
+# plt.show()
+plt.savefig('../figures/accuracy_across_days.png', dpi=300)
+plt.close()
 
 # NOTE: Figure --- reaction time across all session types
 fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 8))
@@ -314,9 +317,9 @@ ax[0 ,0].set_title('Mean Reaction Times Across Days per Session Type', fontsize=
 ax[0, 0].set_xlabel('Day')
 ax[0, 0].set_ylabel('Reaction Time (ms)')
 ax[0, 0].legend(title='Session Type', loc='lower left')
-plt.show()
-#plt.savefig('../figures/rts_across_days.png', dpi=300)
-#plt.close()
+# plt.show()
+plt.savefig('../figures/rts_across_days.png', dpi=300)
+plt.close()
 
 # NOTE: Figure -- accuracy across all lab days (blocks)
 d_lab_all = d_all[d_all['session_type'] == 'Lab'].copy()
@@ -324,6 +327,48 @@ d_lab_all['block_cont'] = ((d_lab_all['session_num'] - 1) * 26) + d_lab_all['blo
 
 fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8,8))
 sns.pointplot(data=d_lab_all, x='block_cont', y='acc', hue='probe_condition',
+              errorbar='se', scale=0.75, ax=ax[0,0])
+plt.tight_layout()
+plt.show()
+
+# NOTE: RT distribution -- final 100 trials of first lab training session
+d_lab_first_train = d_all[
+    (d_all['session_type'] == 'Lab') &
+    (d_all['phase'] == 'train') &
+    (d_all['session_num'] == 1)
+].copy()
+d_lab_first_train = d_lab_first_train[
+    d_lab_first_train['trial'] >= (d_lab_first_train['trial'].max() - 99)
+].copy()
+
+rt_total = len(d_lab_first_train)
+rt_above_1500 = (d_lab_first_train['rt'] > 1500).sum()
+rt_above_1750 = (d_lab_first_train['rt'] > 1750).sum()
+rt_between_1500_1750 = (
+    (d_lab_first_train['rt'] > 1500) &
+    (d_lab_first_train['rt'] <= 1750)
+).sum()
+
+print('Final 100 trials of first lab train RT distribution')
+print('n trials:', rt_total)
+print('pct rt > 1500 ms:', (rt_above_1500 / rt_total) * 100)
+print('pct rt > 1750 ms:', (rt_above_1750 / rt_total) * 100)
+print('pct 1500 < rt <= 1750 ms:', (rt_between_1500_1750 / rt_total) * 100)
+
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 6))
+sns.histplot(data=d_lab_first_train, x='rt', bins=40, ax=ax[0, 0])
+ax[0, 0].axvline(1500, color='black', linestyle='--')
+ax[0, 0].axvline(1750, color='black', linestyle='--')
+ax[0, 0].set_title('RT Distribution: Final 100 Trials of First Lab Training Session')
+ax[0, 0].set_xlabel('Reaction Time (ms)')
+ax[0, 0].set_ylabel('Count')
+plt.tight_layout()
+plt.savefig('../figures/rt_distribution_first_lab_train_last100.png', dpi=300)
+plt.close()
+
+# NOTE: Figure -- same as above but rt
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8,8))
+sns.pointplot(data=d_lab_all, x='block_cont', y='rt', hue='subject_id',
               errorbar='se', scale=0.75, ax=ax[0,0])
 plt.tight_layout()
 plt.show()
@@ -359,18 +404,27 @@ res_anova = pg.rm_anova(data=d_anova,
                         subject='subject_id',
                         correction=True)
 
+print('ANOVA \n', res_anova)
+
 # NOTE: Stats -- dual-task: is there a difference in accuracy?
+# last training day to dt
 res = pg.ttest(x=d_dtf[d_dtf['session_num'] == 'Last Training Day']['acc_plot'],
                y=d_dtf[d_dtf['session_num'] == 'Dual-Task Day']['acc_plot'],
                alternative='two-sided',
                paired=True)
+print('training vs dt \n', res)
 
-res = pg.ttest(x=d_dtf[d_dtf['session_num'] == 'Lab']['acc_plot'],
+# last lab day to dt
+res = pg.ttest(x=d_dtf[d_dtf['session_num'] == 'Lab Day']['acc_plot'],
                y=d_dtf[d_dtf['session_num'] == 'Dual-Task Day']['acc_plot'],
                alternative='two-sided',
                paired=True)
+print('lab vs dt \n', res)
 
 # NOTE: Figure -- calculating + plotting cost for accuracy and reaction time
+pal = sns.color_palette('rocket', 6)
+mid3 = pal[2:4]
+
 d_cost = d_all.copy() 
 
 drop_subs = [134, 213, 268, 358, 482]
@@ -409,7 +463,50 @@ sns.pointplot(data=dd_wide_acc,
               linestyle='none',
               dodge=True
 )
-plt.show()
+# plt.show()
+plt.savefig('../figures/accuracy_cost_point.png', dpi=300)
+plt.close()
+
+# barplot accuracy cost
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 8))
+sns.barplot(data=dd_wide_acc,
+            x='session_num',
+            y='diff_score',
+            hue='probe_condition',
+            errorbar='se',
+            linestyle='none',
+            dodge=True,
+            palette='flare',
+            err_kws={"color": "black"},
+            capsize=0.2
+)
+# plt.show()
+plt.savefig('../figures/accuracy_cost_bar.png', dpi=300)
+plt.close()
+
+# NOTE: stats -- accuracy cost
+
+
+# # plot accuracy cost for each subject
+# fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(10, 5))
+# sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 90],
+#              x = 'session_num',
+#              y = 'diff_score',
+#              hue = 'subject_id',
+#              ax=ax[0, 0]
+# )
+# sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 180],
+#              x = 'session_num',
+#              y = 'diff_score',
+#              hue = 'subject_id',
+#              ax=ax[0, 1]
+# )
+# sns.move_legend(ax[0, 0], 'upper left', bbox_to_anchor=(1, 1))
+# sns.move_legend(ax[0, 1], 'upper left', bbox_to_anchor=(1, 1))
+# plt.tight_layout()
+# plt.show()
+# plt.savefig('90vs180.png')
+
 
 # reaction times
 dd_wide_rt = (
@@ -437,27 +534,43 @@ sns.pointplot(data=dd_wide_rt,
               linestyle='none',
               dodge=True
 )
-plt.show()
+# plt.show()
+plt.savefig('../figures/rt_cost_point.png', dpi=300)
+plt.close()
 
-# plot accuracy cost for each subject 
-fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(10, 5))
-sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 90],
-             x = 'session_num',
-             y = 'diff_score',
-             hue = 'subject_id',
-             ax=ax[0, 0]
+# barplot rt cost
+fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(8, 8))
+sns.barplot(data=dd_wide_rt,
+            x='session_num',
+            y='diff_score',
+            hue='probe_condition',
+            errorbar='se',
+            linestyle='none',
+            dodge=True,
+            palette='flare',
+            err_kws={"color": "black"},
+            capsize=0.2
 )
-sns.lineplot(data=dd_wide[dd_wide['probe_condition'] == 180],
-             x = 'session_num',
-             y = 'diff_score',
-             hue = 'subject_id',
-             ax=ax[0, 1]
-)
-sns.move_legend(ax[0, 0], 'upper left', bbox_to_anchor=(1, 1))
-sns.move_legend(ax[0, 1], 'upper left', bbox_to_anchor=(1, 1))
+# plt.show()
+plt.savefig('../figures/rt_cost_bar.png', dpi=300)
+plt.close()
+
+# plot reaction times before and after for each day
+dd['phase'] = pd.Categorical(dd['phase'], categories=['train', 'test'], ordered=True)
+days = [1, 6, 11, 16, 21]
+
+fig, ax = plt.subplots(1, 5, squeeze=False, sharey=True, figsize=(10,6))
+for i, day in enumerate(days):
+    sns.lineplot(data=dd[dd['session_num']==day],
+                 x='phase',
+                 y='rt',
+                 hue='probe_condition',
+                 units='subject_id',
+                 marker='o',
+                 estimator=None,
+                 ax=ax[0,i])
 plt.tight_layout()
 plt.show()
-plt.savefig('90vs180.png')
 
 # NOTE: Figure -- calculating + plotting conguency accurancy and reaction times (90 only)
 d_congruency = d_all.copy() 
@@ -536,7 +649,7 @@ sns.pointplot(data=dd_wide_rt,
               x='session_num',
               y='diff_score',
               hue='probe_condition',
-              markers='congruency'
+              markers='congruency',
               errorbar='se',
               linestyle='none',
               dodge=True
