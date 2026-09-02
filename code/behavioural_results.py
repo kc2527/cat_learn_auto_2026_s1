@@ -1,6 +1,6 @@
 import numpy as np
 import scipy
-import pingouin
+import pingouin as pg
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -59,11 +59,10 @@ for fd in os.listdir(dir_data):
                 df = pd.read_csv(f_full_path)
                 df['f_name'] = fs
 
-                # subject 943, sesssion 6 labelled as session 2 in .csv, unsure
-                # why -- correcting that here
+                # subject 943: made an exact copy of session 2 and relabelled it
+                # to session 6 -- session excluded
                 if fs == 'sub_943_sess_006_part_001_date_2026_04_29_data.csv':
-                    df['session_num'] = 6
-
+                    continue
 
                 session = df['session_num'].unique()
 
@@ -233,7 +232,7 @@ plt.show()
 d_anova = d_all[~d_all['session_num'].isin(d_all[d_all['session_num']==22])]
 
 res_anova = pg.rm_anova(data=d_anova,
-                        dv='acc_plot',
+                        dv='acc',
                         within='session_num',
                         subject='subject_id',
                         correction=True)
